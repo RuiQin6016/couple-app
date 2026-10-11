@@ -1,0 +1,3441 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover：iPhone 上装到桌面后要能用到全屏（刘海/底部横条区域由 CSS 的 env(safe-area-*) 补内边距） -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>恋爱小管家</title>
+<script>
+  /* ★ 版本号：两台手机必须一样。不一样 = 其中一台还在跑旧代码（缓存没刷新），
+     这是排查"她能收到我的、我收不到她的"这类问题时第一个要看的东西。
+     改了前端代码就把它 +1。 */
+  window.APP_BUILD = '2026-10-11-12'
+</script>
+
+<!-- ===== PWA：装到手机桌面 =====
+     安卓 Chrome：打开 → 菜单「安装应用」→ 桌面出现真图标（WebAPK）
+     iPhone Safari：打开 → 分享 → 「添加到主屏幕」
+     ⚠️ 必须走 https（或 localhost）。file:// 下装不了，同步也用不了。 -->
+<!-- 用 .json 而不是 .webmanifest：很多服务器（含 GitHub Pages）不认识 .webmanifest，
+     会按 application/octet-stream 返回，Chrome 对 manifest 的类型不保证宽容。
+     内容一样，.json 全球都按 application/json 发，零风险。 -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#F4A7C4">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- default：状态栏不透明、网页内容从状态栏下方开始（比 black-translucent 稳，
+     不用自己算刘海高度；页面里那个「假状态栏」在 PWA 模式下会被隐藏，见 CSS） -->
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="小管家">
+<meta name="format-detection" content="telephone=no">
+
+<link rel="stylesheet" href="design-tokens.css">
+<!-- 例假模块的样式：全部选择器都带 pd- 前缀（只有一个 #scr-period.on），不会污染本页 -->
+<link rel="stylesheet" href="period.css">
+<!-- 共同相册的样式：选择器都带 al- 前缀（只有 #scr-album.on），不会污染本页
+     ⚠️ ?v= 不能省：Chrome 对 file:// 的子资源会缓存，改了 CSS 不换版本号看不到效果（已踩） -->
+<link rel="stylesheet" href="album.css?v=5">
+<!-- 设置面板（同步配对 / 天气 Key / 我的身份）：选择器都带 st- 前缀
+     ⚠️ 浮层挂在 <body> 上而不是 .content 里 —— .content{z-index:1} 是层叠上下文，
+        装在里面的话翻不过 .tabbar(99)，底部按钮会被整条吃掉（相册踩过这个坑） -->
+<link rel="stylesheet" href="settings.css?v=1">
+<!-- 情绪日记「点日期」面板：选择器全带 md- 前缀，浮层挂 <body> -->
+<link rel="stylesheet" href="mood.css?v=1">
+<!-- 悄悄话对话页：选择器全带 wsp- 前缀，全屏浮层挂 <body> -->
+<link rel="stylesheet" href="whisper.css?v=1">
+<!-- 「装到桌面」提示条：只在浏览器标签里打开时出现 -->
+<link rel="stylesheet" href="install-tip.css?v=1">
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+
+  /* ============================================================
+     把「网页感 / 浏览器感」去掉（用户 2026-10-11 要求）
+     ------------------------------------------------------------
+     现象：手机上随便点一下/长按，会冒出浏览器的「搜索这段文字」「复制」「保存图片」
+     那种菜单，用起来不像 App。
+     原因：① 长按文字 → Chromium 的 touch-to-search / 选择菜单
+           ② 长按图片 → 系统的「存储图像」
+           ③ 双击 → 页面缩放
+     这三条都在 CSS 里能关掉。输入框/文本域必须**放行**，
+     否则连字都打不了（这个坑很容易踩）。
+     ============================================================ */
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body,.content,.tabbar,.screen{
+    -webkit-user-select:none;user-select:none;
+    -webkit-touch-callout:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;      /* 去掉双击缩放 */
+  }
+  /* 图片一律不可拖、不可长按保存 */
+  img,svg{-webkit-user-drag:none;user-drag:none;-webkit-touch-callout:none;pointer-events:auto}
+  /* 要能打字的地方必须放行选择 */
+  input,textarea,[contenteditable="true"]{
+    -webkit-user-select:text;user-select:text;
+    -webkit-touch-callout:default;touch-action:auto;
+  }
+  /* 用户可能想复制的地方（口令指纹、链接码）也放行 */
+  .sel-ok,.st-fp .v,.st-in{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--page-bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    overflow-x:hidden;
+  }
+
+  /* ============ 页面骨架 ============ */
+  .screen{display:none;min-height:100vh;position:relative;padding-bottom:calc(var(--tab-h) + 16px);overflow-x:hidden}
+  .screen.on{display:block}
+  .ambient{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+  .content{position:relative;z-index:1}
+
+  /* ============================================================
+     装到桌面之后（PWA / standalone）的适配
+     ------------------------------------------------------------
+     判断方式见页面脚本末尾：body 会加上 .pwa 类
+     （display-mode:standalone 或 iOS 的 navigator.standalone）。
+     预览时可用 ?pwa=1 强制打开，方便出图检查。
+     ============================================================ */
+  /* 假状态栏已删除，PWA 模式下顶部安全区由 .navbar 的 padding-top 处理 */
+  /* 顶部留出刘海/状态栏高度（status-bar-style=default 时通常为 0，留着不吃亏） */
+  body.pwa .navbar{padding-top:calc(6px + env(safe-area-inset-top))}
+  /* 底部：iPhone 的横条会压住 tabBar。内容本来就靠上对齐，
+     所以只把 bar 加高 + 补底部内边距，图标位置不动。
+     ⚠️ 高度基准统一走 --tab-h（见 .cartbar 上面的注释）：
+        兑换条 / 商城留白 / toast 都按它算，tabBar 一长高它们自动让开。 */
+  body.pwa .tabbar{
+    height:var(--tab-h);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  /* 100dvh：手机上浏览器地址栏收放时 100vh 会算错（内容被切） */
+  @supports (min-height:100dvh){ .screen{min-height:100dvh} }
+
+  /* 背景：柔光晕 + 星点 */
+  .ambient{
+    background:
+      radial-gradient(190px 190px at 90% 5%,rgba(255,194,220,.5),transparent 70%),
+      radial-gradient(230px 230px at 5% 30%,rgba(255,220,234,.6),transparent 72%),
+      radial-gradient(210px 210px at 94% 70%,rgba(255,214,232,.45),transparent 72%);
+  }
+  .ambient .star{position:absolute;width:10px;height:10px}
+  .ambient .star svg{width:100%;height:100%;display:block}
+
+  /* ============ 顶部 ============
+     ⚠️ 原来这里有个「假状态栏」（10:25 / ▮▮▮ ᯤ），已删除：
+       真机上系统状态栏就在那个位置，两个叠着是穿帮；它也不是这个 App 该显示的内容。
+       真机的刘海/状态栏安全区改由 body.pwa 的 padding 处理（见上面的 PWA 段）。 */
+
+  .navbar{display:flex;align-items:center;gap:10px;padding:6px var(--gap-page) 0}
+  .navbar .hood-ic{width:30px;height:30px;flex:0 0 auto;position:relative}
+  .navbar .hood-ic .dome{
+    position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+    width:24px;height:22px;border-radius:13px 13px 8px 8px;background:var(--hero-bg);
+  }
+  .navbar .hood-ic .ear{
+    position:absolute;top:0;width:9px;height:13px;border-radius:5px;background:var(--hero-bg);
+  }
+  .navbar .hood-ic .ear.l{left:2px;transform:rotate(-16deg)}
+  .navbar .hood-ic .ear.r{right:2px;transform:rotate(16deg)}
+  .navbar .tt{font-size:20px;font-weight:800}
+  .navbar .sub{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+  .navbar .bell{
+    margin-left:auto;width:34px;height:34px;border-radius:50%;flex:0 0 auto;
+    background:var(--surface);box-shadow:var(--shadow-card);
+    display:grid;place-items:center;font-size:15px;
+  }
+
+  .wrap{padding:14px var(--gap-page) 0}
+
+  /* ============ 空态（等你规划，可直接删） ============ */
+  .plan{margin-top:22px;border:2px dashed var(--line-strong);border-radius:var(--radius-card);
+    padding:28px 20px;text-align:center;background:rgba(255,252,248,.6)}
+  .plan .ic{font-size:30px;line-height:1}
+  .plan .t{font-size:15px;font-weight:800;margin-top:12px}
+  .plan .d{font-size:12px;color:var(--ink-3);line-height:1.7;margin-top:8px}
+  .plan code{
+    display:inline-block;margin-top:14px;font-size:11px;background:var(--accent-3);
+    color:var(--primary-deep);padding:5px 10px;border-radius:8px;
+    font-family:ui-monospace,Menlo,Consolas,monospace
+  }
+
+  /* ============================================================
+     每日一言 —— 首页顶部主视觉
+     与 prototype/data/quotes.js 保持一致的语料在这里内联一份
+     （浏览器直接打开 HTML 时 file:// 下不能 fetch/xhr 本地文件，
+       所以内联；小程序端改为 require('../../data/quotes.js')）
+     ============================================================ */
+  /* 压缩版：整宽保留（语料中位 16 字、最长 52 字，半宽会换 4 行），
+     但整体压矮 —— 字号 21→15、行高收紧、去掉底部一行、内边距收小。
+     182px → 约 110px，腾出的空间给天气和日期。 */
+  .daily-quote{
+    color:#fff;
+    border-radius:var(--radius-card);
+    padding:15px 16px 14px;
+    position:relative;overflow:hidden;
+    box-shadow:var(--shadow-fab);
+    /* 两处柔光用背景叠出来。
+       不要用 ::before/::after + right:-56px 这类负偏移装饰：
+       即使被 overflow:hidden 裁掉，scrollWidth 仍会算满
+       （实测撑到 414 > 358），在真机窄屏上可能引发横向滚动。
+       这个坑在 .love 卡片上已经踩过一次。 */
+    background-image:
+      radial-gradient(170px 170px at 112% -22%, rgba(255,255,255,.14), transparent 70%),
+      radial-gradient(110px 110px at -8% 118%, rgba(255,255,255,.10), transparent 72%),
+      var(--hero-bg);
+  }
+  .daily-quote .qmark{
+    position:absolute;right:14px;top:10px;width:28px;height:28px;
+    opacity:.4;pointer-events:none;
+  }
+  .daily-quote .qmark svg{width:100%;height:100%;display:block;fill:#fff}
+  .daily-quote .meta{
+    display:flex;align-items:center;gap:7px;position:relative;z-index:2;
+    font-size:10.5px;font-weight:800;letter-spacing:1.6px;opacity:.95;
+  }
+  .daily-quote .meta .dotline{
+    height:3px;flex:1;max-width:52px;
+    background-image:radial-gradient(circle,rgba(255,255,255,.85) 1.4px,transparent 1.5px);
+    background-size:8px 3px;background-repeat:repeat-x;background-position:center;
+  }
+  .daily-quote .txt{
+    position:relative;z-index:2;margin:9px 0 0;
+    font-size:15px;line-height:1.6;font-weight:800;letter-spacing:.5px;
+    text-shadow:0 2px 10px rgba(180,90,135,.18);
+  }
+  .daily-quote .src{
+    display:block;position:relative;z-index:2;margin-top:9px;
+    font-size:10.5px;font-weight:700;opacity:.86;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+
+  /* ============================================================
+     纪念日卡 —— 与每日一言同尺寸，但画风刻意分开：
+       每日一言 = 粉紫渐变 / 白色引号 / 无描边
+       纪念日   = 粉浅棕黄 / 爱心点缀 / 日历质感 / 暖棕描边
+     两个卡片的圆角、尺寸、内边距一致，所以视觉重量相当，
+     但配色与图形语言完全不同，不会看成一类东西。
+     ============================================================ */
+  .anniv{
+    color:var(--anniv-ink);
+    border-radius:var(--radius-card);
+    padding:22px 20px 20px;
+    position:relative;overflow:hidden;
+    border:1px solid var(--anniv-line);
+    box-shadow:var(--anniv-shadow);
+    background-color:var(--anniv-bg);
+    /* 淡点阵（日历网格的暗示）+ 两处暖光。
+       光晕用背景叠，不用负偏移的伪元素——后者会撑大 scrollWidth。 */
+    background-image:
+      radial-gradient(circle, var(--anniv-dot) 1.15px, transparent 1.7px),
+      radial-gradient(150px 150px at 104% -20%, var(--anniv-glow), transparent 70%),
+      radial-gradient(120px 120px at -12% 112%, var(--anniv-glow-2), transparent 72%);
+    background-size:15px 15px, auto, auto;
+    background-position:7px 9px, center, center;
+  }
+  /* 上缘一道暖色细线 */
+  .anniv::before{
+    content:"";position:absolute;left:0;right:0;top:0;height:2px;
+    background:linear-gradient(90deg,transparent,var(--anniv-accent-line),transparent);
+    opacity:.9;pointer-events:none;
+  }
+
+  /* ---- 平常状态：粉浅棕黄 ---- */
+  .anniv{
+    --anniv-bg:   #F7E9DA;          /* 米白偏粉 */
+    --anniv-glow: rgba(226,168,140,.30);
+    --anniv-glow-2: rgba(232,196,186,.26);
+    --anniv-ink:   #7A5B45;         /* 奶茶棕 */
+    --anniv-ink-2: #A3856D;
+    --anniv-ink-3: #BE9F86;
+    --anniv-pink:  #E7A9A2;         /* 粉棕，点缀主色 */
+    --anniv-tan:   #D9A26B;         /* 浅棕黄，用于数字与进度 */
+    --anniv-line:  rgba(191,150,120,.34);
+    --anniv-dot:   rgba(217,162,107,.26);
+    --anniv-accent-line: rgba(217,162,107,.55);
+    --anniv-badge-bg: #E7A9A2;
+    --anniv-badge-ink: #FFFFFF;
+    --anniv-shadow: 0 6px 18px rgba(190,150,125,.22);
+  }
+  /* ---- 就是今天：整体转暖，点缀加深 ---- */
+  .anniv.today{
+    --anniv-bg:   #FCE6D8;
+    --anniv-glow: rgba(232,150,130,.36);
+    --anniv-glow-2: rgba(240,190,170,.30);
+    --anniv-ink:   #7A4E3C;
+    --anniv-ink-2: #A5715A;
+    --anniv-ink-3: #C08E76;
+    --anniv-pink:  #E58C86;
+    --anniv-tan:   #D08A50;
+    --anniv-line:  rgba(220,140,120,.42);
+    --anniv-dot:   rgba(224,140,110,.28);
+    --anniv-accent-line: rgba(228,140,110,.68);
+    --anniv-badge-bg: #E58C86;
+    --anniv-badge-ink: #FFFFFF;
+    --anniv-shadow: 0 8px 22px rgba(210,140,120,.28);
+  }
+
+  /* 右上角日历图形，占位与每日一言的引号一致（40×40 / 右18 上12） */
+  .anniv .mark{
+    position:absolute;right:18px;top:12px;width:40px;height:40px;
+    color:var(--anniv-tan);opacity:.62;pointer-events:none;
+  }
+  .anniv .mark svg{width:100%;height:100%;display:block}
+
+  /* 爱心点缀（母题），压在大数字右下，不挡文字 */
+  .anniv .heart{
+    position:absolute;right:54px;top:44px;width:26px;height:26px;
+    color:var(--anniv-pink);opacity:.5;pointer-events:none;
+  }
+  .anniv .heart svg{width:100%;height:100%;display:block;fill:currentColor}
+
+  .anniv .kicker{
+    display:flex;align-items:center;gap:7px;position:relative;z-index:2;
+    font-size:11.5px;font-weight:800;letter-spacing:.6px;color:var(--anniv-tan);
+  }
+  .anniv .kicker .rule{
+    height:3px;flex:1;max-width:62px;
+    background-image:radial-gradient(circle,var(--anniv-tan) 1.5px,transparent 1.6px);
+    background-size:8px 3px;background-repeat:repeat-x;background-position:center;
+    opacity:.55;
+  }
+
+  /* 大天数：跟每日一言的正文字号(21px)拉开，让主次分明 */
+  .anniv .big{
+    display:flex;align-items:baseline;gap:6px;position:relative;z-index:2;
+    margin:12px 0 0;
+  }
+  .anniv .big b{
+    font-size:38px;line-height:1;font-weight:800;letter-spacing:-1.2px;
+    color:var(--anniv-tan);
+    font-variant-numeric:tabular-nums;
+  }
+  .anniv .big span{font-size:14px;font-weight:800;color:var(--anniv-ink-2)}
+  .anniv .from{
+    position:relative;z-index:2;margin-top:8px;
+    font-size:11.5px;color:var(--anniv-ink-3);letter-spacing:.3px;
+  }
+
+  /* 下一个纪念日 + 进度 */
+  .anniv .next{
+    display:flex;align-items:center;gap:9px;position:relative;z-index:2;margin-top:16px;
+  }
+  .anniv .next .lbl{
+    font-size:11.5px;font-weight:800;color:var(--anniv-ink-2);
+    display:flex;align-items:center;gap:5px;
+  }
+  /* 小爱心跟着标签走 */
+  .anniv .next .lbl svg{
+    width:12px;height:12px;flex:0 0 auto;fill:var(--anniv-pink);
+  }
+  .anniv .next .days{
+    margin-left:auto;font-size:12px;font-weight:800;color:var(--anniv-tan);
+    font-variant-numeric:tabular-nums;
+  }
+  .anniv .track{
+    position:relative;z-index:2;height:5px;border-radius:999px;margin-top:9px;
+    background:rgba(191,150,120,.20);overflow:hidden;
+  }
+  .anniv .track i{
+    display:block;height:100%;border-radius:999px;
+    background:linear-gradient(90deg,rgba(231,169,162,.7),var(--anniv-tan));
+  }
+
+  /* 可点改日期 */
+  .anniv .edit{
+    position:relative;z-index:2;display:inline-flex;align-items:center;gap:5px;
+    margin-top:15px;padding:6px 13px;border-radius:var(--radius-pill);
+    font-size:11.5px;font-weight:800;color:var(--anniv-ink);
+    background:rgba(255,255,255,.55);
+    border:1px solid var(--anniv-line);
+    cursor:pointer;
+  }
+  .anniv .edit:active{background:rgba(255,255,255,.8)}
+
+  /* 就是今天的角标 */
+  .anniv .badge{
+    position:absolute;left:20px;top:20px;z-index:3;
+    display:none;align-items:center;gap:4px;
+    font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:var(--radius-pill);
+    background:var(--anniv-badge-bg);color:var(--anniv-badge-ink);
+  }
+  .anniv.today .badge{display:inline-flex}
+  .anniv.today .kicker{visibility:hidden}
+
+  /* ===== 改日期面板 ===== */
+  .edit-panel{
+    display:none;margin-top:10px;padding:16px;
+    background:var(--surface);border-radius:var(--radius-card);
+    border:1.5px solid var(--line);box-shadow:var(--shadow-card);
+  }
+  .edit-panel.on{display:block}
+  .edit-panel .t{font-size:13px;font-weight:800;color:var(--ink);margin-bottom:4px}
+  .edit-panel .d{font-size:11px;color:var(--ink-3);margin-bottom:12px;line-height:1.6}
+  .edit-panel input[type=date]{
+    width:100%;padding:11px 12px;font-size:14px;font-weight:700;
+    color:var(--ink);background:var(--accent-3);
+    border:1.5px solid var(--line);border-radius:14px;
+    font-family:inherit;
+  }
+  .edit-panel .row{display:flex;gap:9px;margin-top:12px}
+  .edit-panel .row .btn{flex:1;padding:11px}
+
+  /* ============================================================
+     天气 + 日期（每日一言压矮后腾出的位置）
+     顺序：天气在左、日期在右。
+     ============================================================ */
+  .half-row{
+    display:grid;grid-template-columns:1fr 1fr;gap:var(--gap-card);
+    margin-top:var(--gap-card);
+    align-items:stretch;   /* 两张卡等高，内容少的由 justify-content 居中 */
+  }
+  .half{
+    min-width:0;padding:12px 14px;
+    border-radius:var(--radius-card);
+    border:1.5px solid var(--line);
+    box-shadow:var(--shadow-card);
+    display:flex;flex-direction:column;
+    position:relative;overflow:hidden;
+  }
+
+  /* ---- 日期卡：内容少，固定 88px，居中 ---- */
+  .half.date{
+    min-height:88px;justify-content:center;
+    background-color:#FCF1E3;
+    background-image:radial-gradient(90px 90px at 108% -10%,rgba(233,176,138,.42),transparent 72%);
+  }
+  .half.date .k{font-size:10px;font-weight:800;letter-spacing:1.2px;color:#C09E86;margin-bottom:7px}
+  .half.date .big{font-size:24px;font-weight:800;line-height:1;letter-spacing:-.5px;color:#8A6244}
+  .half.date .sub{font-size:11px;font-weight:700;line-height:1.45;margin-top:6px;color:#A9846A}
+
+  /* ---- 天气卡：左右两人各一半，内容多所以不限高 ---- */
+  .half.weather{
+    background-color:#F2F6FA;
+    background-image:radial-gradient(96px 96px at 108% -10%,rgba(160,196,226,.45),transparent 72%);
+    min-height:88px;
+  }
+  .half.weather .k{font-size:10px;font-weight:800;letter-spacing:1.2px;color:#9AAEBE;margin-bottom:8px}
+  .half.weather .bro{
+    display:flex;align-items:center;gap:7px;padding:5px 0;
+  }
+  .half.weather .bro + .bro{
+    border-top:1px dashed rgba(146,178,204,.42);margin-top:2px;padding-top:7px;
+  }
+  .half.weather .bro .ico{font-size:18px;line-height:1;flex:0 0 auto}
+  .half.weather .bro .who{
+    font-size:10px;font-weight:800;color:#8CA2B4;flex:0 0 auto;
+    max-width:3.4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .half.weather .bro .t{
+    font-size:17px;font-weight:800;line-height:1;color:#3E4E5C;margin-left:auto;
+    font-variant-numeric:tabular-nums;
+  }
+  /* 不同城市时用左侧小竖条区分 */
+  .half.weather .bro.me{box-shadow:inset 2px 0 0 #9CC0DE;padding-left:7px;margin-left:-4px}
+  .half.weather .bro.ta{box-shadow:inset 2px 0 0 #E7A9A2;padding-left:7px;margin-left:-4px}
+
+  /* ============================================================
+     悄悄话（首页新卡）—— 奶油纸 + 雾紫 · 夜色私语
+     色值全部来自 design-tokens.css 的 --whisper-*，这里不写死颜色。
+     装饰一律用背景/伪元素正偏移，不用 right:-80px 这类负偏移
+     （负偏移即使被 overflow:hidden 裁掉，scrollWidth 仍会算满）。
+     ============================================================ */
+  .whisper{
+    margin-top:var(--gap-card);
+    padding:16px 18px 13px;
+    border-radius:var(--radius-card);
+    border:1.5px solid var(--whisper-line);
+    box-shadow:var(--whisper-shadow);
+    background-color:var(--whisper-bg);
+    /* 稀疏星点（夜空）+ 两处柔光。
+       刻意不用纪念日那种「密点阵」——那是日历网格的暗示，
+       这里用 38×34 的大间距，看着才像星星而不是格子。 */
+    background-image:
+      radial-gradient(circle, var(--whisper-star) 1.3px, transparent 1.9px),
+      radial-gradient(150px 150px at 106% -18%, var(--whisper-glow), transparent 70%),
+      radial-gradient(120px 120px at -10% 116%, var(--whisper-glow-2), transparent 72%);
+    background-size:38px 34px, auto, auto;
+    background-position:8px 10px, center, center;
+    position:relative;overflow:hidden;
+    color:var(--whisper-ink);
+    cursor:pointer;
+  }
+  .whisper:active{transform:scale(.994)}
+
+  /* 右上角纸飞机（原创线条 SVG，占位与纪念日的日历图标一致） */
+  .whisper .mark{
+    position:absolute;right:16px;top:12px;width:38px;height:38px;
+    color:var(--whisper-accent);opacity:.55;pointer-events:none;
+  }
+  .whisper .mark svg{width:100%;height:100%;display:block}
+
+  .whisper .ttl-row{
+    display:flex;align-items:center;gap:8px;position:relative;z-index:2;
+    padding-right:44px;   /* 给右上角图形让位 */
+  }
+  .whisper .ttl{font-size:22px;font-weight:800;line-height:1.15;letter-spacing:1.5px}
+  .whisper .unread{
+    display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;
+    font-size:10px;font-weight:800;padding:3px 8px;border-radius:var(--radius-pill);
+    background:var(--whisper-accent);color:#fff;letter-spacing:.2px;
+  }
+  .whisper .unread.off{display:none}
+  .whisper .unread .d{width:5px;height:5px;border-radius:50%;background:#fff;opacity:.9}
+
+  .whisper .last{
+    margin-top:9px;font-size:12px;font-weight:600;line-height:1.5;
+    color:var(--whisper-ink-2);position:relative;z-index:2;
+    padding-right:44px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .whisper .last b{color:var(--whisper-accent-2);font-weight:800}
+  .whisper .last.empty{color:var(--whisper-ink-3);font-weight:600}
+
+  .whisper .foot{
+    display:flex;align-items:center;gap:8px;position:relative;z-index:2;
+    margin-top:12px;padding-top:11px;
+    border-top:1px dashed var(--whisper-line);
+  }
+  .whisper .foot .go{font-size:12px;font-weight:800;color:var(--whisper-accent-2);letter-spacing:.4px}
+  .whisper .foot .arw{
+    margin-left:8px;width:24px;height:24px;border-radius:50%;flex:0 0 auto;
+    background:#fff;color:var(--whisper-accent-2);
+    display:grid;place-items:center;box-shadow:0 2px 7px rgba(150,124,196,.26);
+  }
+  .whisper .foot .arw svg{width:13px;height:13px;display:block}
+  .whisper .foot .time{margin-left:auto;font-size:10px;font-weight:700;color:var(--whisper-ink-3)}
+
+  /* ============================================================
+     情绪日记（首页新卡）—— 薄荷奶绿 · 月历
+     格子固定 6 行：不同月份 4/5/6 行时卡片高度不跳
+     （首页会跟着抖，每日一言已经是这个毛病，不要再加一个）。
+     ============================================================ */
+  .moodcard{
+    margin-top:var(--gap-card);
+    padding:15px 16px 13px;
+    border-radius:var(--radius-card);
+    border:1.5px solid var(--mood-line);
+    box-shadow:var(--mood-shadow);
+    background-color:var(--mood-bg);
+    background-image:
+      radial-gradient(150px 150px at 106% -20%, var(--mood-glow), transparent 70%),
+      radial-gradient(120px 120px at -12% 116%, var(--mood-glow-2), transparent 72%);
+    position:relative;overflow:hidden;
+    color:var(--mood-ink);
+    cursor:pointer;
+  }
+  .moodcard:active{transform:scale(.997)}
+
+  .moodcard .hd{display:flex;align-items:center;gap:7px;position:relative;z-index:2}
+  .moodcard .hd .tt{font-size:13px;font-weight:800;letter-spacing:.8px;color:var(--mood-accent-2)}
+  .moodcard .hd .mo{
+    margin-left:auto;font-size:11px;font-weight:800;color:var(--mood-ink-2);
+    font-variant-numeric:tabular-nums;
+  }
+  .moodcard .hd .mo .arw{color:var(--mood-ink-3);margin-left:3px}
+
+  /* 图例：方形=我 / 圆形=对方（参考图的约定，第一次看要能看懂） */
+  .moodcard .legend{display:flex;align-items:center;gap:11px;margin-top:9px;position:relative;z-index:2}
+  .moodcard .legend .li{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--mood-ink-2)}
+  .moodcard .legend .sq{width:9px;height:9px;border-radius:2.5px;background:var(--mood-accent);flex:0 0 auto}
+  .moodcard .legend .ci{width:9px;height:9px;border-radius:50%;background:var(--mood-accent-2);flex:0 0 auto}
+  .moodcard .legend .hint{margin-left:auto;font-size:10px;font-weight:700;color:var(--mood-ink-3)}
+
+  .moodcard .wk{display:grid;grid-template-columns:repeat(7,1fr);margin-top:10px;position:relative;z-index:2}
+  .moodcard .wk span{
+    text-align:center;font-size:9.5px;font-weight:800;
+    color:var(--mood-ink-3);letter-spacing:.5px;
+  }
+  /* 固定 6 行 × 47px：高度恒定，月份 4/5/6 行都不跳。
+     ⚠️ 47px 是量出来的，不能拍脑袋改小：格子内容 = 日期一行(13px)
+        + 上下两个图标(14+1+14=29px) + 间距(2px) = 44px。
+        实测行高 45px 时「图标底 → 下一行日期顶」只剩 2px，上一行的图标
+        看起来像挂在下一行日期上（已踩过一次：行高 38px 时内容直接溢出到下一行）。 */
+  .moodcard .grid{
+    display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:47px;
+    margin-top:4px;position:relative;z-index:2;
+  }
+  .moodcard .cell{
+    min-width:0;display:flex;flex-direction:column;align-items:center;
+    padding-top:1px;border-radius:9px;
+  }
+  .moodcard .cell .d{
+    font-size:11px;font-weight:700;line-height:1.15;color:var(--mood-ink-2);
+    font-variant-numeric:tabular-nums;
+  }
+  .moodcard .cell.out .d{color:var(--mood-ink-3);opacity:.55;font-weight:600}
+  .moodcard .cell.today{background:rgba(255,255,255,.62)}
+  .moodcard .cell.today .d{color:var(--mood-today);font-weight:800}
+
+  .moodcard .chips{display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:1px}
+  /* 方形 = 我、圆形 = 对方；底色由当天心情色决定（在 JS 里算，预设可改）。
+     ⚠️ padding/gap/border-radius 必须显式归零：本页有一个全局的 .chip 标签样式
+        （padding:5px 11px、gap:4px），本选择器虽然把它压住了字号和底色，
+        但没声明的 padding 会照旧生效 —— 结果 14×14 的方格子被撑成 22×14 的长条，
+        圆形也变成椭圆（实测 chipSize = "22x14"）。 */
+  .moodcard .chip{
+    width:14px;height:14px;padding:0;gap:0;border-radius:0;
+    display:grid;place-items:center;
+    font-size:9px;line-height:1;flex:0 0 auto;background:transparent;
+  }
+  .moodcard .chip.me{border-radius:4px}
+  .moodcard .chip.ta{border-radius:50%}
+  /* 两人都没记录：一个空的圆圈占位（参考图里就是这样）。
+     透明度压得很低 —— 42 个格子都画一圈会变成"答题卡"，太吵。 */
+  .moodcard .chip.empty{
+    border:1.2px solid var(--mood-ink-3);background:transparent;opacity:.34;
+    border-radius:50%;
+  }
+
+/* ============================================================
+     可复用组件（现在没被用到，留着给你规划时直接抄）
+     ============================================================ */
+
+  /* 卡片 */
+  .card{background:var(--surface);border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);border:1.5px solid var(--line);
+    position:relative;min-width:0}
+
+  /* 主按钮 / 次按钮 */
+  .btn{padding:10px 20px;border-radius:var(--radius-pill);font-size:13px;font-weight:800;
+    display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .btn.primary{background:var(--hero-bg);color:#fff;box-shadow:var(--shadow-fab)}
+  .btn.plain{background:var(--accent-3);color:var(--primary-deep);border:1px solid var(--line)}
+
+  /* 竖向大数字（统计用） */
+  .stat .n{font-size:12.5px;font-weight:800;color:var(--ink-2)}
+  .stat .v{font-size:30px;font-weight:800;line-height:1.1;margin-top:3px}
+  .stat .v small{font-size:14px;color:var(--ink-3);margin-left:1px}
+
+  /* 进度条 */
+  .track{height:7px;border-radius:var(--radius-pill);background:var(--ring-track);overflow:hidden}
+  .track i{display:block;height:100%;border-radius:var(--radius-pill);background:var(--bar-bg)}
+
+  /* 进度环（conic-gradient，改 --p 百分比即可） */
+  .ring{--p:0%;width:54px;height:54px;border-radius:50%;flex:0 0 auto;position:relative;
+    background:conic-gradient(var(--accent) var(--p),var(--ring-track) 0)}
+  .ring::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
+  .ring b{position:absolute;inset:0;display:grid;place-items:center;z-index:1;
+    font-size:12px;font-weight:800;color:var(--primary-deep)}
+
+  /* 标签 chip */
+  .chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-3);
+    padding:5px 11px;font-size:12px;color:var(--ink-2);font-weight:700;
+    border-radius:var(--radius-chip)}
+
+  /* 横向滚动（注意 min-width:0 —— flex 子项默认 min-width:auto 会撑破容器） */
+  .hscroll{display:flex;gap:10px;overflow-x:auto;min-width:0;scrollbar-width:none}
+  .hscroll::-webkit-scrollbar{display:none}
+
+  /* ============================================================
+     积分商城
+     结构参考"点菜"类小程序：左边分类竖排 + 右边商品列表（分区带小标题），
+     底部一条固定的兑换条。画风仍是美乐蒂风（柔粉 + 大圆角 + 爱心/星点母题）。
+     ============================================================ */
+
+  /* ---- 签到卡：一行字 + 签到按钮 + 当前积分 ---- */
+  .signin{
+    display:flex;align-items:center;gap:10px;
+    background:var(--surface);border:1.5px solid var(--line);
+    border-radius:var(--radius-card);box-shadow:var(--shadow-card);
+    padding:12px 13px;position:relative;overflow:hidden;
+  }
+  .signin .txt{flex:1;min-width:0}
+  .signin .tt{font-size:13.5px;font-weight:800;color:var(--ink);line-height:1.35}
+  .signin .ss{font-size:10.5px;font-weight:700;color:var(--ink-3);margin-top:3px}
+  .signin .pts{
+    flex:0 0 auto;display:flex;align-items:center;gap:4px;
+    background:var(--accent-3);border:1px solid var(--line);
+    border-radius:var(--radius-pill);padding:7px 10px;
+  }
+  .signin .pts svg{width:13px;height:13px;flex:0 0 auto;color:var(--primary-deep)}
+  .signin .pts b{
+    font-size:13.5px;font-weight:800;color:var(--primary-deep);
+    font-variant-numeric:tabular-nums;letter-spacing:-.2px;
+  }
+  .signin .go{
+    flex:0 0 auto;padding:9px 15px;border-radius:var(--radius-pill);
+    background:var(--hero-bg);color:#fff;font-size:12.5px;font-weight:800;
+    box-shadow:var(--shadow-fab);cursor:pointer;
+  }
+  .signin .go:active{transform:translateY(1px)}
+  .signin .go.done{
+    background:var(--accent-2);color:var(--ink-3);box-shadow:none;
+    border:1px solid var(--line);cursor:default;
+  }
+  /* +520 飘字 */
+  .signin .fly{
+    position:absolute;right:64px;top:14px;font-size:12.5px;font-weight:800;
+    color:var(--primary-deep);opacity:0;pointer-events:none;
+  }
+  .signin .fly.on{animation:flyup 1.1s ease-out}
+  @keyframes flyup{
+    0%{opacity:0;transform:translateY(8px)}
+    25%{opacity:1}
+    100%{opacity:0;transform:translateY(-18px)}
+  }
+
+  /* ---- 左分类 + 右商品 两栏 ---- */
+  .mallgrid{
+    display:grid;grid-template-columns:84px minmax(0,1fr);
+    gap:10px;margin-top:var(--gap-card);align-items:stretch;
+  }
+  /* 左栏本身只占位（拉满右列高度），真正好看的那张卡片是里面的 .cats-in，
+     它 sticky 在顶部：滚动时分类跟着走，下方也不会留一大块空框。 */
+  .cats{min-width:0}
+  .cats-in{
+    position:sticky;top:10px;
+    background:var(--surface);border:1.5px solid var(--line);
+    border-radius:20px;box-shadow:var(--shadow-card);padding:6px 0;
+  }
+  .cat{
+    position:relative;margin:2px 5px;padding:10px 6px 10px 10px;
+    border-radius:12px;font-size:12px;font-weight:700;line-height:1.3;
+    color:var(--ink-2);cursor:pointer;
+  }
+  .cat.on{background:var(--accent-3);color:var(--primary-deep);font-weight:800}
+  /* 选中态左侧短竖条（left:0，不用负偏移，免得撑大 scrollWidth） */
+  .cat.on::before{
+    content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+    width:3px;height:15px;border-radius:2px;background:var(--primary);
+  }
+
+  /* ---- 商品列表：一次只显示一个分类（点左栏切换） ---- */
+  .gwrap{min-width:0}
+  .gblock{display:none}
+  .gblock.on{display:block}
+  .gsec{
+    display:flex;align-items:center;gap:7px;margin:2px 0 8px;
+    font-size:13px;font-weight:800;color:var(--ink);
+  }
+  .gsec b{font-size:11px;font-weight:800;color:var(--ink-3)}
+  .gsec .rule{
+    flex:1;height:1px;min-width:0;
+    background-image:radial-gradient(circle,var(--line-strong) 1px,transparent 1.1px);
+    background-size:6px 1px;background-repeat:repeat-x;
+  }
+  .gsec + .gi{margin-top:0}
+  .gsec.mt{margin-top:16px}
+
+  /* ---- 商品行 ---- */
+  .gi{
+    display:flex;align-items:center;gap:10px;min-width:0;
+    background:var(--surface);border:1.5px solid var(--line);
+    border-radius:20px;box-shadow:var(--shadow-card);
+    padding:10px;margin-bottom:8px;
+  }
+  .gi .thumb{
+    width:56px;height:56px;flex:0 0 auto;border-radius:16px;
+    display:grid;place-items:center;
+  }
+  .gi .thumb svg{width:32px;height:32px;display:block}
+  .gi .info{flex:1;min-width:0}
+  /* 名字允许折两行（"一起弄（懂的都懂）"这种 10 个字的名字，
+     单行放不下会被省略号吃掉），最多两行，再多就截断 */
+  .gi .nm{
+    font-size:13.5px;font-weight:800;color:var(--ink);line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;word-break:break-word;
+  }
+  .gi .sub{font-size:10.5px;font-weight:700;color:var(--ink-3);margin-top:3px}
+  .gi .pr{
+    display:flex;align-items:center;gap:3px;margin-top:5px;
+    font-size:15px;font-weight:800;color:var(--primary-deep);line-height:1;
+    font-variant-numeric:tabular-nums;
+  }
+  .gi .pr svg{width:13px;height:13px;flex:0 0 auto}
+  .gi .pr small{font-size:10px;font-weight:800;color:var(--ink-3);margin-left:1px}
+
+  /* 缩略图配色（色值都在 design-tokens.css 里） */
+  .t-pink{background:var(--tile-pink-bg);color:var(--tile-pink-ink)}
+  .t-blue{background:var(--tile-blue-bg);color:var(--tile-blue-ink)}
+  .t-warm{background:var(--tile-warm-bg);color:var(--tile-warm-ink)}
+  .t-lilac{background:var(--tile-lilac-bg);color:var(--tile-lilac-ink)}
+  .t-rose{background:var(--tile-rose-bg);color:var(--tile-rose-ink)}
+
+  /* ---- 分类里还没商品时的虚线空位 ---- */
+  .gempty{
+    display:flex;align-items:center;justify-content:center;
+    min-height:58px;margin-bottom:8px;
+    border:1.5px dashed var(--line);border-radius:20px;
+    background:rgba(255,252,248,.45);
+    font-size:11px;font-weight:700;color:var(--ink-3);
+  }
+
+  /* ---- 加号 / 步进器 ---- */
+  .op{flex:0 0 auto;display:flex;align-items:center;gap:7px}
+  .add{
+    width:27px;height:27px;border-radius:50%;background:var(--hero-bg);color:#fff;
+    display:grid;place-items:center;font-size:18px;font-weight:800;line-height:1;
+    padding-bottom:2px;box-shadow:0 4px 10px rgba(228,150,186,.42);cursor:pointer;
+  }
+  .add:active{transform:scale(.92)}
+  .step{display:flex;align-items:center;gap:7px}
+  .step .m,.step .p{
+    width:25px;height:25px;border-radius:50%;display:grid;place-items:center;
+    font-size:15px;font-weight:800;line-height:1;cursor:pointer;
+  }
+  .step .m{background:var(--accent-3);color:var(--primary-deep);border:1.5px solid var(--line)}
+  .step .p{background:var(--hero-bg);color:#fff;box-shadow:0 4px 10px rgba(228,150,186,.42)}
+  .step .m:active,.step .p:active{transform:scale(.92)}
+  .step .q{
+    min-width:14px;text-align:center;font-size:13px;font-weight:800;
+    color:var(--ink);font-variant-numeric:tabular-nums;
+  }
+
+  /* 底部两条固定栏（tabBar 和商城兑换条）共用同一个高度基准。
+     ⚠️ 以前兑换条写死 bottom:92px（= 84 + 8），而 PWA 模式下 tabBar 会变成
+        「84px + 安全区」—— 安卓手势条能占 24~48px，tabBar 一长高，
+        兑换条就正好落在它里面被盖住（真机上实测反馈的问题）。
+        现在 tabBar 长多高，兑换条自动往上让多少。 */
+  html{--tab-h:84px}
+  body.pwa{--tab-h:calc(84px + env(safe-area-inset-bottom))}
+
+  /* ---- 底部兑换条（站在 tabBar 之上） ---- */
+  .cartbar{
+    position:fixed;left:12px;right:12px;bottom:calc(var(--tab-h) + 8px);z-index:98;
+    display:flex;align-items:center;gap:10px;
+    background:var(--surface);border:1.5px solid var(--line);
+    border-radius:var(--radius-pill);padding:8px 9px 8px 10px;
+    box-shadow:0 10px 26px rgba(190,130,155,.24);
+  }
+  .cartbar .cart{
+    position:relative;width:42px;height:42px;flex:0 0 auto;border-radius:50%;
+    background:var(--hero-bg);color:#fff;display:grid;place-items:center;
+    box-shadow:var(--shadow-fab);cursor:pointer;
+  }
+  .cartbar .cart:active{transform:scale(.94)}
+  .cartbar .cart svg{width:21px;height:21px;display:block}
+  .cartbar .cart .badge{
+    position:absolute;right:0;top:0;min-width:16px;height:16px;padding:0 4px;
+    border-radius:var(--radius-pill);background:var(--primary-deep);color:#fff;
+    border:1.5px solid var(--surface);
+    font-size:10px;font-weight:800;line-height:1;
+    display:none;place-items:center;
+  }
+  .cartbar .cart .badge.on{display:grid}
+  .cartbar .sum{flex:1;min-width:0}
+  .cartbar .sum .a{
+    font-size:12.5px;font-weight:800;color:var(--ink);
+    font-variant-numeric:tabular-nums;
+  }
+  .cartbar .sum .a b{color:var(--primary-deep)}
+  .cartbar .sum .b{font-size:10.5px;font-weight:700;color:var(--ink-3);margin-top:2px}
+  .cartbar .ex{
+    flex:0 0 auto;padding:12px 22px;border-radius:var(--radius-pill);
+    background:var(--hero-bg);color:#fff;font-size:13px;font-weight:800;
+    box-shadow:var(--shadow-fab);cursor:pointer;
+  }
+  .cartbar .ex.off{
+    background:var(--accent-2);color:var(--ink-3);box-shadow:none;
+    border:1px solid var(--line);cursor:default;
+  }
+  .cartbar .ex:active{transform:translateY(1px)}
+  /* 商城页要给固定条留出空间：= 兑换条底边(var(--tab-h)+8) + 兑换条高(61) + 呼吸位(33) */
+  #scr-mall.on{padding-bottom:calc(var(--tab-h) + 102px)}
+
+  /* ---- 轻提示 ---- */
+  .toast{
+    position:fixed;left:50%;bottom:calc(var(--tab-h) + 84px);z-index:200;
+    transform:translateX(-50%) translateY(8px);
+    max-width:78%;text-align:center;
+    background:rgba(92,69,80,.93);color:#fff;
+    font-size:12.5px;font-weight:700;line-height:1.5;
+    padding:9px 16px;border-radius:var(--radius-pill);
+    opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;
+  }
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ============ tabBar：首页 / 商城 / 个人 ============ */
+  .tabbar{position:fixed;left:0;right:0;bottom:0;height:var(--tab-h);z-index:99;
+    display:flex;align-items:flex-start;padding-top:9px;background:var(--surface);
+    border-radius:26px 26px 0 0;border-top:2px solid var(--line);
+    box-shadow:0 -6px 24px rgba(190,130,155,.16)}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tab .ic{font-size:19px;line-height:1;filter:grayscale(1);opacity:.4}
+  .tab .tx{font-size:10.5px;font-weight:700;color:var(--ink-3)}
+  .tab.on .ic{filter:none;opacity:1}
+  .tab.on .tx{color:var(--primary-deep);font-weight:800}
+  .tab.on .dot{width:4px;height:4px;border-radius:50%;background:var(--primary-deep)}
+
+  /* ============================================================
+     小挂件小猪「糯米」—— 可自由拖动，不固定在首页
+     素材：prototype/pet/*.png（透明底、脚底已统一对齐）
+     拖动时「揪后脖颈」：整体拉长 + 绕抓取点摆动
+     ⚠️ 走路动画没做：交付的 4 张 walk 帧不是同一只猪，接循环会变样
+     ============================================================ */
+
+  /* ---- 挂件本体（position:fixed；**只在首页显示**，切页由 body.not-home 隐藏） ---- */
+  .petwidget{
+    position:fixed;left:0;top:0;z-index:120;
+    width:100px;height:100px;                   /* 原来 130px，用户说太大一坨 */
+    cursor:grab;touch-action:none;              /* 手机上禁掉滚动，否则拖不动 */
+    -webkit-tap-highlight-color:transparent;
+    will-change:transform;
+  }
+  .petwidget .wbody{
+    width:100%;height:100%;position:relative;
+    /* 轴心 = 绳头（实测：绳端在精灵高度 13.9% 处）
+       拖动时绳头固定在指针上，猪从下面摆出去 —— 就是「牵着绳子吊起来」 */
+    transform-origin:50% 13.9%;
+  }
+  /* 所有层叠在同一位置；走路帧靠 opacity 切换（换 src 会闪） */
+  .petwidget .lyr{
+    position:absolute;left:0;top:0;width:100%;height:100%;
+    display:block;object-fit:contain;
+    -webkit-user-drag:none;user-select:none;
+    filter:drop-shadow(0 6px 10px rgba(190,130,155,.28));
+  }
+  .petwidget .lyr-w1,.petwidget .lyr-w2,
+  .petwidget .lyr-w3,.petwidget .lyr-w4{opacity:0}
+
+  /* ---- 只有首页才看得到、才能摸 ----
+     用户要求（2026-10-10）：小猪只在首页出现。
+     以前是挂在 .screen 外面故意「切页也跟着」，现在反过来 —— go() 切页时给 body 加 not-home。
+     ⚠️ 用 display:none 而不是 opacity:0：opacity 只是看不见，仍然能点到（就还能拖动）。
+     面板和飘心是独立元素，一并隐藏，否则会留下一个悬空的操作面板。 */
+  body.not-home .petwidget,
+  body.not-home .petpop,
+  body.not-home .petfx{display:none}
+
+  /* ---- 走路：4 帧依次点亮，0.8s 一轮；位移交给 JS（避免和 translate3d 打架） ---- */
+  .petwidget.walking .lyr-idle{opacity:0;animation:none}
+  .petwidget.walking .lyr-w1{animation:lyr1 .8s steps(1,end) infinite}
+  .petwidget.walking .lyr-w2{animation:lyr2 .8s steps(1,end) infinite}
+  .petwidget.walking .lyr-w3{animation:lyr3 .8s steps(1,end) infinite}
+  .petwidget.walking .lyr-w4{animation:lyr4 .8s steps(1,end) infinite}
+  @keyframes lyr1{0%,24.99%{opacity:1}25%,100%{opacity:0}}
+  @keyframes lyr2{0%,24.99%{opacity:0}25%,49.99%{opacity:1}50%,100%{opacity:0}}
+  @keyframes lyr3{0%,49.99%{opacity:0}50%,74.99%{opacity:1}75%,100%{opacity:0}}
+  @keyframes lyr4{0%,74.99%{opacity:0}75%,100%{opacity:1}}
+  /* 走动时身体轻微上下（脚底已在同一基线，所以只加一点点） */
+  .petwidget.walking .wbody{animation:pet-step-bob .4s ease-in-out infinite}
+  @keyframes pet-step-bob{
+    0%,100%{transform:translateY(0)}
+    50%    {transform:translateY(-2px)}
+  }
+  /* 抓取点的小圆点，只在被牵住时出现（位置 = 绳头，正好是轴心） */
+  .petwidget .scruff{
+    position:absolute;left:50%;top:13.9%;width:11px;height:11px;
+    margin:-5.5px 0 0 -5.5px;border-radius:50%;
+    background:rgba(224,116,159,.6);
+    box-shadow:0 0 0 3px rgba(255,255,255,.78);
+    opacity:0;transition:opacity .15s ease;
+  }
+
+  /* ---- 待机呼吸（轴心在脚底，才像站在地上） ---- */
+  .petwidget{bottom:auto}
+  .petwidget .wbody{animation:pet-breathe 3.4s ease-in-out infinite}
+  @keyframes pet-breathe{
+    0%,100%{transform:translateY(0) scale(1)}
+    50%    {transform:translateY(-3px) scale(1.035)}
+  }
+  .petwidget.sleeping .wbody{animation:pet-breathe-slow 5.2s ease-in-out infinite}
+  @keyframes pet-breathe-slow{
+    0%,100%{transform:translateY(0) scale(1)}
+    50%    {transform:translateY(-1.5px) scale(1.02)}
+  }
+
+  /* ---- 被揪起来：拉长 + 绕脖子摆（吊挂手感） ---- */
+  .petwidget.grabbed{cursor:grabbing}
+  .petwidget.grabbed .wbody{animation:pet-hang .52s ease-in-out infinite alternate}
+  @keyframes pet-hang{
+    0%  {transform:rotate(-6.5deg) scale(.93,1.1) }
+    100%{transform:rotate(6.5deg)  scale(.95,1.07)}
+  }
+  .petwidget.grabbed .scruff{opacity:1}
+  .petwidget.grabbed img{filter:drop-shadow(0 8px 14px rgba(190,130,155,.34))}
+
+  /* ---- 松手回弹：从当前角度摆几下停住 ---- */
+  .petwidget.settle .wbody{animation:pet-settle 1.05s cubic-bezier(.28,1.3,.5,1)}
+  @keyframes pet-settle{
+    0%  {transform:rotate(6.5deg) scale(.95,1.07)}
+    26% {transform:rotate(-7deg)  scale(1.05,.95)}
+    52% {transform:rotate(4.2deg) scale(.98,1.02)}
+    76% {transform:rotate(-1.8deg) scale(1.01,.99)}
+    100%{transform:rotate(0) scale(1)}
+  }
+
+  /* ---- 摸头：压扁回弹（轴心在脚底） ---- */
+  .petwidget.petting .wbody{
+    transform-origin:50% 100%;
+    animation:pet-squish .62s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pet-squish{
+    0%  {transform:scale(1,1)}
+    30% {transform:translateY(4px) scale(1.13,.85)}
+    65% {transform:scale(.97,1.05)}
+    100%{transform:scale(1,1)}
+  }
+  .petwidget.eating .wbody{animation:pet-nibble .42s ease-in-out 3}
+  @keyframes pet-nibble{
+    0%,100%{transform:translateY(0)}
+    50%    {transform:translateY(5px)}
+  }
+  .petwidget.washing .wbody{animation:pet-wobble .3s ease-in-out 6}
+  @keyframes pet-wobble{
+    0%,100%{transform:rotate(0)}
+    25%    {transform:rotate(-5deg)}
+    75%    {transform:rotate(5deg)}
+  }
+
+  /* ---- 操作面板：跟在挂件旁边，点一下才出来 ---- */
+  .petpop{
+    position:fixed;z-index:121;width:236px;
+    background:var(--surface);
+    border:1.5px solid var(--line);border-radius:20px;
+    box-shadow:0 12px 30px rgba(180,120,150,.24);
+    padding:12px 13px 11px;
+    opacity:0;transform:translateY(8px) scale(.96);
+    pointer-events:none;
+    transition:opacity .18s ease, transform .18s cubic-bezier(.34,1.4,.6,1);
+  }
+  .petpop.on{opacity:1;transform:none;pointer-events:auto}
+  .petpop .hd{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+  .petpop .hd b{font-size:13.5px;font-weight:800;color:var(--ink)}
+  .petpop .lv{font-size:9.5px;font-weight:800;color:#fff;
+    background:var(--hero-bg);padding:3px 8px;border-radius:var(--radius-pill)}
+  .petpop .lv.stage1{background:linear-gradient(120deg,#F7C86B,#E9A94A)}
+  .petpop .lv.stage2{background:linear-gradient(120deg,#F4A7C4,#E0749F)}
+  .petpop .pts{margin-left:auto;display:flex;align-items:center;gap:4px;
+    font-size:10.5px;font-weight:800;color:var(--primary-deep);
+    background:var(--accent-3);padding:3px 8px;border-radius:var(--radius-pill)}
+  .petpop .pts svg{width:11px;height:11px;flex:0 0 auto}
+
+  .petpop .bars{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:11px}
+  .petpop .bar{min-width:0}
+  .petpop .bar .lb{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:10px;font-weight:800;color:var(--ink-2);margin-bottom:4px}
+  .petpop .bar .lb em{font-style:normal;font-size:9px;color:var(--ink-3);
+    font-variant-numeric:tabular-nums}
+  .petpop .bar .tr{height:6px;border-radius:var(--radius-pill);
+    background:#F7E7EF;overflow:hidden}
+  .petpop .bar .tr b{display:block;height:100%;border-radius:var(--radius-pill);
+    transition:width .5s cubic-bezier(.4,1.3,.6,1)}
+  .petpop .bar.food   .tr b{background:linear-gradient(90deg,#FFCB8E,#F0A257)}
+  .petpop .bar.mood   .tr b{background:linear-gradient(90deg,#FFB6CE,#F4789F)}
+  .petpop .bar.clean  .tr b{background:linear-gradient(90deg,#A9D9F1,#6FB6DE)}
+  .petpop .bar.energy .tr b{background:linear-gradient(90deg,#C9B6EA,#9B84D4)}
+
+  .petpop .acts{display:flex;gap:7px}
+  .petpop .acts .a{
+    flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;
+    padding:7px 0 6px;border-radius:13px;
+    background:var(--accent-3);border:1px solid var(--line);
+    font-size:10.5px;font-weight:800;color:var(--primary-deep);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .petpop .acts .a:active{background:#FFE8F1;transform:scale(.95)}
+  .petpop .acts .a em{font-style:normal;font-size:15px;line-height:1.1}
+
+  .petpop .peerline{display:flex;align-items:center;gap:6px;
+    margin-top:10px;padding:7px 9px;border-radius:11px;
+    background:#FFF6F9;border:1px dashed var(--line-strong);
+    font-size:10px;font-weight:700;color:var(--ink-2);line-height:1.45}
+  .petpop .peerline.none{opacity:.6}
+  .petpop .peerline svg{width:11px;height:11px;flex:0 0 auto;fill:var(--primary)}
+
+  /* ---- 摸头飘出的爱心（fixed，跟着挂件位置） ---- */
+  .petfx{
+    position:fixed;z-index:122;width:19px;height:19px;
+    pointer-events:none;opacity:0;
+  }
+  .petfx svg{width:100%;height:100%;display:block;fill:var(--primary)}
+  .petfx.go{animation:fx-float 1.15s ease-out forwards}
+  @keyframes fx-float{
+    0%  {opacity:0;transform:translate(0,0) scale(.5)}
+    18% {opacity:1}
+    100%{opacity:0;transform:translate(var(--dx,0px),-72px) scale(1.25)}
+  }
+
+  /* ============ 预览导出模式（?full=1） ============ */
+  html[data-full="1"] .screen{padding-bottom:20px}
+  html[data-full="1"] .tabbar{position:static;border-radius:0;margin-top:16px}
+  html[data-full="1"] .cartbar{position:static;margin-top:16px}
+  html[data-full="1"] .toast{display:none}
+</style>
+</head>
+<body>
+
+<!-- 图形库：原创造型，不复刻任何注册形象 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="g-heart" viewBox="0 0 24 24">
+      <path d="M12 20.4 4.6 13.2C1.2 9.9 3.3 4.6 7.7 4.6c1.9 0 3.4 1.2 4.3 2.6.9-1.4 2.4-2.6 4.3-2.6 4.4 0 6.5 5.3 3.1 8.6L12 20.4Z"/>
+    </symbol>
+    <symbol id="g-star" viewBox="0 0 24 24">
+      <path d="M12 2.6l2.5 6.4 6.8.5-5.2 4.4 1.6 6.6L12 16.9 6.3 20.5l1.6-6.6L2.7 9.5l6.8-.5L12 2.6Z"/>
+    </symbol>
+    <!-- 桌宠：兜帽兔（母题 = 兜帽，原创造型）。规划时用 <use href="#g-pet-bunny"/> -->
+    <symbol id="g-pet-bunny" viewBox="-10 -10 200 235">
+      <path d="M52 76C34 34 6 42 22 88Z" fill="#F4A7C4" stroke="#5C4550" stroke-width="3"
+            stroke-linejoin="round"/>
+      <path d="M128 76C146 34 174 42 158 88Z" fill="#F4A7C4" stroke="#5C4550" stroke-width="3"
+            stroke-linejoin="round"/>
+      <path d="M53 74C40 46 22 52 30 82Z" fill="#FFC8DE"/>
+      <path d="M127 74C140 46 158 52 150 82Z" fill="#FFC8DE"/>
+      <ellipse cx="90" cy="171" rx="43" ry="39" fill="#FFFCF8" stroke="#5C4550" stroke-width="3"/>
+      <ellipse cx="68" cy="200" rx="15" ry="10" fill="#FFFCF8" stroke="#5C4550" stroke-width="3"/>
+      <ellipse cx="112" cy="200" rx="15" ry="10" fill="#FFFCF8" stroke="#5C4550" stroke-width="3"/>
+      <ellipse cx="90" cy="107" rx="54" ry="49" fill="#F4A7C4" stroke="#5C4550" stroke-width="3"/>
+      <path d="M44 116q9 11 18 0t18 0 18 0 18 0 18 0" fill="none" stroke="#5C4550"
+            stroke-width="2.4" stroke-linecap="round" opacity=".55"/>
+      <ellipse cx="90" cy="116" rx="41" ry="36" fill="#FFFCF8" stroke="#5C4550" stroke-width="2.5"/>
+      <ellipse cx="72" cy="110" rx="6.6" ry="7.6" fill="#5C4550"/>
+      <ellipse cx="108" cy="110" rx="6.6" ry="7.6" fill="#5C4550"/>
+      <circle cx="74.2" cy="107" r="2.1" fill="#fff"/>
+      <circle cx="110.2" cy="107" r="2.1" fill="#fff"/>
+      <ellipse cx="90" cy="127" rx="4.6" ry="3.4" fill="#E0749F"/>
+      <path d="M90 130.5v3.6" stroke="#5C4550" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M90 134q-5.6 5.6-9.6.5" stroke="#5C4550" stroke-width="2.2" fill="none"
+            stroke-linecap="round"/>
+      <path d="M90 134q5.6 5.6 9.6.5" stroke="#5C4550" stroke-width="2.2" fill="none"
+            stroke-linecap="round"/>
+      <ellipse cx="57" cy="129" rx="8" ry="5.2" fill="#FFC8DE" opacity=".85"/>
+      <ellipse cx="123" cy="129" rx="8" ry="5.2" fill="#FFC8DE" opacity=".85"/>
+    </symbol>
+
+    <!-- ============================================================
+         商城图标：全部原创手绘线条图形（不复刻任何注册形象）。
+         统一 viewBox 0 0 32 32、描边用 currentColor，
+         所以同一个图标换 CSS color 就能换色，缩略图底色在 .thumb 上给。
+         ============================================================ -->
+    <!-- 积分币 -->
+    <symbol id="g-ic-coin" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="16" cy="16" r="11.5"/>
+      <path d="M16 21.6c-2.5-1.9-4.2-3.4-4.2-5.1 0-1.3 1-2.3 2.2-2.3.9 0 1.6.5 2 1.2.4-.7 1.1-1.2 2-1.2 1.2 0 2.2 1 2.2 2.3 0 1.7-1.7 3.2-4.2 5.1Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 视频通话 -->
+    <symbol id="g-ic-call" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="3.5" width="14" height="25" rx="3.5"/>
+      <path d="M13.5 7h5"/>
+      <path d="M16 20.4c-2.5-1.9-4.2-3.4-4.2-5.1 0-1.3 1-2.3 2.2-2.3.9 0 1.6.5 2 1.2.4-.7 1.1-1.2 2-1.2 1.2 0 2.2 1 2.2 2.3 0 1.7-1.7 3.2-4.2 5.1Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 抱抱：两个人 + 中间一颗心 -->
+    <symbol id="g-ic-hug" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="10" cy="16.6" r="4.6"/>
+      <circle cx="22" cy="16.6" r="4.6"/>
+      <path d="M2 29.6c0-4.4 3.6-8 8-8M30 29.6c0-4.4-3.6-8-8-8"/>
+      <path d="M16 9.4c-1.6-1.3-2.7-2.2-2.7-3.3 0-.8.6-1.5 1.4-1.5.5 0 1 .3 1.3.8.3-.5.8-.8 1.3-.8.8 0 1.4.7 1.4 1.5 0 1.1-1.1 2-2.7 3.3Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 奖牌 / 免死金牌 -->
+    <symbol id="g-ic-medal" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="16" cy="11.5" r="7.2"/>
+      <path d="M11.6 17.6 8.6 28.4l7.4-3.8 7.4 3.8-3-10.8"/>
+      <path d="M16 8.2l1.1 2.2 2.4.35-1.74 1.7.41 2.4L16 13.72l-2.17 1.13.41-2.4-1.74-1.7 2.4-.35Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 哄睡（月亮 + 星） -->
+    <symbol id="g-ic-moon" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.6 4.4A12 12 0 1 0 27.6 20 9.5 9.5 0 0 1 20.6 4.4Z"/>
+      <path d="M25.6 5.2l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 打游戏（手柄） -->
+    <symbol id="g-ic-game" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="26" height="14" rx="7"/>
+      <path d="M11.4 14.4v7.2M7.8 18h7.2"/>
+      <circle cx="21.6" cy="16.4" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="24.6" cy="20.4" r="1.5" fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 聊天 -->
+    <symbol id="g-ic-chat" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7.5 7h17A3.5 3.5 0 0 1 28 10.5v6A3.5 3.5 0 0 1 24.5 20H14l-6.5 5.6V20h-.5A3.5 3.5 0 0 1 3.5 16.5v-6A3.5 3.5 0 0 1 7 7Z"/>
+      <circle cx="11.6" cy="13.6" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="16" cy="13.6" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="20.4" cy="13.6" r="1.4" fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 一起看剧（电视） -->
+    <symbol id="g-ic-tv" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="7" width="24" height="15" rx="3"/>
+      <path d="M16 22v5M11 27h10"/>
+      <path d="M10.5 4l3.5 3M21.5 4 18 7"/>
+    </symbol>
+    <!-- 奶茶 -->
+    <symbol id="g-ic-tea" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9.6 10.5h12.8l-1.1 14.8a3 3 0 0 1-3 2.7h-4.6a3 3 0 0 1-3-2.7L9.6 10.5Z"/>
+      <path d="M7.6 10.5h16.8"/>
+      <path d="M17.6 10.5 20.4 3.8"/>
+      <circle cx="14" cy="23.6" r="1.6" fill="currentColor" stroke="none"/>
+      <circle cx="17.6" cy="25" r="1.6" fill="currentColor" stroke="none"/>
+      <circle cx="20.4" cy="22.6" r="1.6" fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 蛋糕 -->
+    <symbol id="g-ic-cake" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5.5 27.5h21v-8a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3v8Z"/>
+      <path d="M5.5 22.4c1.6 1.5 3.2 1.5 4.8 0s3.2-1.5 4.8 0 3.2 1.5 4.8 0 3.2-1.5 4.8 0"/>
+      <path d="M16 16.4v-4.6"/>
+      <path d="M16 8.6c1.5 1.2 1.5 2.7 0 3.6-1.5-.9-1.5-2.4 0-3.6Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 火锅 -->
+    <symbol id="g-ic-pot" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 15h22v3.8A9.4 9.4 0 0 1 17.6 28.2h-3.2A9.4 9.4 0 0 1 5 18.8V15Z"/>
+      <path d="M2.6 18h2.4M27 18h2.4"/>
+      <path d="M11.6 11c0-2 2-2 2-4M17 11c0-2 2-2 2-4"/>
+    </symbol>
+    <!-- 零食（饼干） -->
+    <symbol id="g-ic-snack" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="16" cy="17" r="10"/>
+      <circle cx="12.6" cy="13.6" r="1.6" fill="currentColor" stroke="none"/>
+      <circle cx="19.2" cy="13" r="1.6" fill="currentColor" stroke="none"/>
+      <circle cx="16.4" cy="19.8" r="1.6" fill="currentColor" stroke="none"/>
+      <circle cx="11.4" cy="20.4" r="1.6" fill="currentColor" stroke="none"/>
+      <circle cx="20.6" cy="19.4" r="1.6" fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 赖床（床） -->
+    <symbol id="g-ic-bed" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 26V12.5"/>
+      <path d="M4 19h20a4 4 0 0 1 4 4v3"/>
+      <path d="M4 24.4h24"/>
+      <rect x="6.6" y="14.4" width="7" height="4.6" rx="2.2"/>
+    </symbol>
+    <!-- 迟到券（时钟） -->
+    <symbol id="g-ic-clock" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="16" cy="16" r="11.2"/>
+      <path d="M16 9.2V16l5 3"/>
+    </symbol>
+    <!-- 带饭（饭碗） -->
+    <symbol id="g-ic-meal" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 16h22a11 11 0 0 1-11 11A11 11 0 0 1 5 16Z"/>
+      <path d="M9.8 16c.9-3 3.4-5 6.2-5s5.3 2 6.2 5"/>
+      <path d="M13 8.2c0-1.6 1.6-1.6 1.6-3.2M17.8 8.2c0-1.6 1.6-1.6 1.6-3.2"/>
+    </symbol>
+    <!-- 洗碗（盘子 + 泡泡） -->
+    <symbol id="g-ic-dish" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="16" cy="20" r="9"/>
+      <circle cx="16" cy="20" r="4.4"/>
+      <circle cx="10.6" cy="7" r="2.4"/>
+      <circle cx="16.4" cy="4.8" r="1.7"/>
+      <circle cx="22" cy="7.6" r="2.1"/>
+    </symbol>
+    <!-- 亲亲（爱心） -->
+    <symbol id="g-ic-kiss" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 26.4C9.8 21.7 6 18.2 6 14.4 6 11.4 8.3 9.4 11 9.4c1.9 0 3.7 1 4.9 2.8 1.2-1.8 3-2.8 4.9-2.8 2.7 0 5 2 5 5 0 3.8-3.8 7.3-9.8 12Z"
+            fill="currentColor" stroke="none"/>
+      <path d="M25 5.4l.7 1.5 1.5.7-1.5.7-.7 1.5-.7-1.5-1.5-.7 1.5-.7Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 摸摸头（手） -->
+    <symbol id="g-ic-hand" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11.4 21.4V10.6a2 2 0 0 1 4 0v6.2"/>
+      <path d="M15.4 16.8V9a2 2 0 0 1 4 0v7.8"/>
+      <path d="M19.4 16.8v-1.6a2 2 0 0 1 4 0v6.4a7 7 0 0 1-7 7h-1.6a7 7 0 0 1-7-7v-3.6a2 2 0 0 1 4 0"/>
+    </symbol>
+    <!-- 彩虹屁（星） -->
+    <symbol id="g-ic-star" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 4l3.4 8.4 9 .6-6.9 5.8 2.2 8.7L16 22.9l-7.7 4.6 2.2-8.7-6.9-5.8 9-.6Z"
+            fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 购物车 -->
+    <symbol id="g-ic-cart" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3.4 5.6h3l3.4 14h13.6l3.2-10.6H8.6"/>
+      <circle cx="11.6" cy="25.4" r="2.2" fill="currentColor" stroke="none"/>
+      <circle cx="21.6" cy="25.4" r="2.2" fill="currentColor" stroke="none"/>
+    </symbol>
+    <!-- 打语音（话筒） -->
+    <symbol id="g-ic-voice" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="12" y="3.5" width="8" height="13.5" rx="4"/>
+      <path d="M7.5 14.6a8.5 8.5 0 0 0 17 0"/>
+      <path d="M16 23.1v4.2M12 27.3h8"/>
+    </symbol>
+    <!-- 买东西（礼盒） -->
+    <symbol id="g-ic-gift" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4.5" y="13.5" width="23" height="14" rx="2.8"/>
+      <rect x="3" y="8.6" width="26" height="4.9" rx="2"/>
+      <path d="M16 8.6v18.9"/>
+      <path d="M16 8.6c-1.3-3.3-4.6-3.7-5.6-1.7-.9 1.8 1 3.4 5.6 1.7Z"/>
+      <path d="M16 8.6c1.3-3.3 4.6-3.7 5.6-1.7.9 1.8-1 3.4-5.6 1.7Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="ambient" id="ambient"></div>
+
+<!-- ============================================================
+     首页 —— UI 已按要求清空，等你规划
+     规划好后把内容写进 <div class="wrap"> 里即可
+     ============================================================ -->
+<div class="screen on" id="scr-home">
+  <div class="content">
+
+
+    <div class="navbar">
+      <span class="hood-ic"><i class="ear l"></i><i class="ear r"></i><i class="dome"></i></span>
+      <div>
+        <div class="tt">首页</div>
+        <div class="sub">今天也要好好照顾它</div>
+      </div>
+      <div class="bell">🎀</div>
+    </div>
+
+    <div class="wrap" id="home-slot">
+
+      <!-- ===== 每日一言：已压矮，只留 标签 / 情话 / 出处 ===== -->
+      <div class="daily-quote" id="daily-quote">
+        <span class="qmark">
+          <svg viewBox="0 0 40 32">
+            <path d="M0 32V18C0 8 5.4 1.6 14.6 0l1.8 4.4C11 6 8.2 9.4 8.4 13.6H16V32H0Z"/>
+            <path d="M24 32V18C24 8 29.4 1.6 38.6 0l1.8 4.4C35 6 32.2 9.4 32.4 13.6H40V32H24Z"/>
+          </svg>
+        </span>
+        <div class="meta">
+          <span>今日情话</span>
+          <span class="dotline"></span>
+        </div>
+        <p class="txt" id="quote-text">加载中…</p>
+        <span class="src" id="quote-src"></span>
+      </div>
+
+      <!-- ===== 日期 + 天气：日历在左、天气在右 ===== -->
+      <div class="half-row">
+        <div class="half date">
+          <div class="k">今天</div>
+          <div class="big" id="d-day">10</div>
+          <div class="sub" id="d-sub">周六 · 10月 · 秋天</div>
+        </div>
+        <div class="half weather">
+          <div class="k">今日天气</div>
+          <div class="bro me">
+            <span class="ico" id="w-ico-me">🌧️</span>
+            <span class="who" id="w-who-me">我</span>
+            <span class="t" id="w-temp-me">--</span>
+          </div>
+          <div class="bro ta">
+            <span class="ico" id="w-ico-ta">☀️</span>
+            <span class="who" id="w-who-ta">TA</span>
+            <span class="t" id="w-temp-ta">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 纪念日卡：与每日一言同尺寸，粉浅棕黄画风 ===== -->
+      <div class="anniv" id="anniv" style="margin-top:var(--gap-card)">
+        <span class="badge">🎉 就是今天</span>
+        <span class="mark">
+          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor"
+               stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4.5" y="8" width="31" height="27.5" rx="6"/>
+            <path d="M4.5 16.5h31"/>
+            <path d="M13.5 4.5v6M26.5 4.5v6"/>
+            <circle cx="14" cy="24" r="2.1" fill="currentColor" stroke="none"/>
+            <circle cx="20" cy="24" r="2.1" fill="currentColor" stroke="none"/>
+            <circle cx="26" cy="24" r="2.1" fill="currentColor" stroke="none"/>
+            <circle cx="14" cy="30" r="2.1" fill="currentColor" stroke="none"/>
+            <circle cx="20" cy="30" r="2.1" fill="currentColor" stroke="none"/>
+          </svg>
+        </span>
+        <span class="heart"><svg viewBox="0 0 24 24"><use href="#g-heart"/></svg></span>
+        <div class="kicker"><span>恋爱纪念日</span><span class="rule"></span></div>
+        <div class="big"><b id="anniv-days">0</b><span id="anniv-unit">天</span></div>
+        <div class="from" id="anniv-from">从 —— 开始</div>
+        <div class="next">
+          <span class="lbl">
+            <svg viewBox="0 0 24 24"><use href="#g-heart"/></svg>
+            <span id="anniv-nextlbl">下一个纪念日</span>
+          </span>
+          <span class="days" id="anniv-count">还有 0 天</span>
+        </div>
+        <div class="track"><i id="anniv-fill" style="width:0%"></i></div>
+        <span class="edit" id="anniv-edit">✎ 修改日期</span>
+      </div>
+
+      <!-- 改日期面板：默认隐藏 -->
+      <div class="edit-panel" id="edit-panel">
+        <div class="t">修改恋爱纪念日</div>
+        <div class="d">选择你们在一起的那一天，天数会自动重新计算。</div>
+        <input type="date" id="edit-date">
+        <div class="d" id="edit-tip" style="margin:8px 0 0"></div>
+        <div class="row">
+          <span class="btn plain" id="edit-cancel">取消</span>
+          <span class="btn primary" id="edit-save">保存</span>
+        </div>
+      </div>
+
+      <!-- ===== 新卡 1：悄悄话（奶油纸 + 雾紫 · 夜色私语） =====
+           整张卡可点，点进对话页。未读角标 + 最后一条摘要。 -->
+      <div class="whisper" id="whisper-card">
+        <span class="mark">
+          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <!-- 纸飞机（原创线条，不复刻任何注册形象） -->
+            <path d="M35.5 5 4.5 17.8l10.9 4.1L35.5 5Z"/>
+            <path d="M35.5 5 15.4 21.9 16.9 33l5.5-7.4L35.5 5Z"/>
+          </svg>
+        </span>
+        <div class="ttl-row">
+          <span class="ttl">悄悄话</span>
+          <!-- 未读角标：内容和显隐都由脚本按真数据填（默认隐藏，别写演示文案） -->
+          <span class="unread off" id="whisper-unread"><i class="d"></i></span>
+        </div>
+        <div class="last empty" id="whisper-last">还没有悄悄话，点进去说第一句</div>
+        <div class="foot">
+          <span class="go">立即前往</span>
+          <span class="time" id="whisper-time"></span>
+          <span class="arw">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12h13M12.5 6l6 6-6 6"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+
+      <!-- ===== 新卡 2：情绪日记（薄荷奶绿月历） =====
+           格子由脚本画（paintMoodCard），固定 6 行所以高度恒定。
+           方形 = 我、圆形 = TA，格子里上下两个小图标。 -->
+      <div class="moodcard" id="mood-card">
+        <div class="hd">
+          <span class="tt">情绪日记</span>
+          <span class="mo" id="mood-month">2026年10月</span>
+        </div>
+        <div class="legend">
+          <span class="li"><i class="sq"></i>我</span>
+          <span class="li"><i class="ci"></i>TA</span>
+          <span class="hint">点日期记录</span>
+        </div>
+        <div class="wk">
+          <span>日</span><span>一</span><span>二</span><span>三</span>
+          <span>四</span><span>五</span><span>六</span>
+        </div>
+        <div class="grid" id="mood-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     商城 —— 积分商城
+     上面：签到一行（记得每日签到哦 + 当前积分 + 签到按钮）
+     下面：左分类 / 右商品（点菜式两栏），底部固定兑换条
+     商品与积分价格都是占位，随时改 MALL 数据即可（在页面脚本里）
+     ============================================================ -->
+<div class="screen" id="scr-mall">
+  <div class="content">
+
+
+    <div class="navbar">
+      <span class="hood-ic"><i class="ear l"></i><i class="ear r"></i><i class="dome"></i></span>
+      <div>
+        <div class="tt">积分商城</div>
+        <div class="sub">签到攒积分 · 兑换小愿望</div>
+      </div>
+      <div class="bell">🎀</div>
+    </div>
+
+    <div class="wrap" id="mall-slot">
+
+      <!-- ===== 签到：一行字 + 签到按钮 + 当前积分 ===== -->
+      <div class="signin" id="signin">
+        <div class="txt">
+          <div class="tt">记得每日签到哦</div>
+          <div class="ss" id="signin-sub">每天签到可得 520 积分</div>
+        </div>
+        <div class="pts">
+          <svg viewBox="0 0 32 32"><use href="#g-ic-coin"/></svg>
+          <b id="pts-now">0</b>
+        </div>
+        <div class="go" id="signin-go">签到</div>
+        <span class="fly" id="signin-fly">+520</span>
+      </div>
+
+      <!-- ===== 左分类 / 右商品 ===== -->
+      <div class="mallgrid">
+        <div class="cats" id="mall-cats"></div>
+        <div class="gwrap" id="mall-goods"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 底部兑换条（跟着商城页显示/隐藏） ===== -->
+  <div class="cartbar" id="cartbar">
+    <div class="cart" id="cart-ic">
+      <svg viewBox="0 0 32 32"><use href="#g-ic-cart"/></svg>
+      <span class="badge" id="cart-badge">0</span>
+    </div>
+    <div class="sum">
+      <div class="a">合计 <b id="cart-total">0</b> 积分</div>
+      <div class="b" id="cart-count">还没选东西</div>
+    </div>
+    <div class="ex off" id="cart-ex">兑换</div>
+  </div>
+</div>
+
+<!-- ============================================================
+     例假 —— 独立模块（data/period.js + data/period-ui.js + period.css）
+     页面骨架只有导航栏 + 一个空容器，内容由 PeriodUI.mount() 生成。
+     ⚠️ 别把模块的 DOM 抄进来：那样以后改模块要改两处。
+     ============================================================ -->
+<div class="screen" id="scr-period">
+  <div class="content">
+
+
+    <div class="navbar">
+      <span class="hood-ic"><i class="ear l"></i><i class="ear r"></i><i class="dome"></i></span>
+      <div>
+        <div class="tt">例假</div>
+        <div class="sub">记着点，他好照顾你</div>
+      </div>
+      <div class="bell">🎀</div>
+    </div>
+
+    <div class="wrap" id="period-slot"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     共同相册 —— 独立模块（data/album.js + data/album-ui.js + album.css）
+     页面骨架只有导航栏 + 一个空容器，内容由 AlbumUI.mount() 生成。
+     ============================================================ -->
+<div class="screen" id="scr-album">
+  <div class="content">
+
+
+    <div class="navbar">
+      <span class="hood-ic"><i class="ear l"></i><i class="ear r"></i><i class="dome"></i></span>
+      <div>
+        <div class="tt">共同相册</div>
+        <div class="sub">两个人的照片，都存在这里</div>
+      </div>
+      <div class="bell">🎀</div>
+    </div>
+
+    <div class="wrap" id="album-slot"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     个人 —— 新建的空页
+     ============================================================ -->
+<div class="screen" id="scr-me">
+  <div class="content">
+
+
+    <div class="navbar">
+      <span class="hood-ic"><i class="ear l"></i><i class="ear r"></i><i class="dome"></i></span>
+      <div>
+        <div class="tt">个人</div>
+        <div class="sub">等你规划</div>
+      </div>
+      <div class="bell">🎀</div>
+    </div>
+
+    <div class="wrap" id="me-slot">
+      <div class="plan">
+        <div class="ic">👤</div>
+        <div class="t">个人页</div>
+        <div class="d">
+          新建的空页。<br>
+          昵称、头像、积分明细、恋爱纪念日设置放不放这儿，你定。
+        </div>
+        <code>#me-slot</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 轻提示（签到 / 兑换反馈） -->
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================
+     小挂件：可自由拖动的小猪
+     故意放在 .screen 之外 —— 这样切到商城/个人页它也在
+     拖动时「揪住后脖颈」：整体拉长 + 绕被抓点摆动（像被拎着）
+     ============================================================ -->
+<div class="petwidget" id="petwidget">
+  <div class="wbody" id="pet-body">
+    <!-- 被揪住时显示的小圆点，标出抓取点 -->
+    <span class="scruff" id="pet-scruff"></span>
+    <!-- 待机（单张，动态换 src） -->
+    <img class="lyr lyr-idle" id="pet-img" src="pet/pig_stand.png" alt="小猪糯米" draggable="false">
+    <!-- 走路 4 帧：四层叠着，只改 opacity —— 换 src 会闪 -->
+    <img class="lyr lyr-w1" src="pet/pig_walk_1.png" alt="" draggable="false">
+    <img class="lyr lyr-w2" src="pet/pig_walk_2.png" alt="" draggable="false">
+    <img class="lyr lyr-w3" src="pet/pig_walk_3.png" alt="" draggable="false">
+    <img class="lyr lyr-w4" src="pet/pig_walk_4.png" alt="" draggable="false">
+  </div>
+</div>
+
+<!-- 点开挂件后的操作面板（跟随挂件位置） -->
+<div class="petpop" id="petpop">
+  <div class="hd">
+    <b id="pop-name">糯米</b>
+    <span class="lv" id="pop-level">幼崽</span>
+    <span class="pts">
+      <svg viewBox="0 0 32 32"><use href="#g-ic-coin"/></svg>
+      <b id="pop-pts">0</b>
+    </span>
+  </div>
+
+  <div class="bars">
+    <div class="bar food">
+      <div class="lb"><span>🍚 饱食</span><em id="pet-v-food">--</em></div>
+      <div class="tr"><b id="pet-b-food" style="width:0%"></b></div>
+    </div>
+    <div class="bar mood">
+      <div class="lb"><span>💗 心情</span><em id="pet-v-mood">--</em></div>
+      <div class="tr"><b id="pet-b-mood" style="width:0%"></b></div>
+    </div>
+    <div class="bar clean">
+      <div class="lb"><span>🛁 清洁</span><em id="pet-v-clean">--</em></div>
+      <div class="tr"><b id="pet-b-clean" style="width:0%"></b></div>
+    </div>
+    <div class="bar energy">
+      <div class="lb"><span>😴 体力</span><em id="pet-v-energy">--</em></div>
+      <div class="tr"><b id="pet-b-energy" style="width:0%"></b></div>
+    </div>
+  </div>
+
+  <div class="acts">
+    <div class="a" id="pet-feed"><em>🍚</em>喂食</div>
+    <div class="a" id="pet-drink"><em>💧</em>喝水</div>
+    <div class="a" id="pet-play"><em>🎾</em>逗它玩</div>
+    <div class="a" id="pet-bath"><em>🛁</em>洗澡</div>
+  </div>
+
+  <div class="peerline none" id="pet-peer">
+    <svg viewBox="0 0 24 24"><use href="#g-heart"/></svg>
+    <span id="pet-peer-txt">还没有互动记录</span>
+  </div>
+</div>
+
+<!-- 摸头飘出来的爱心 -->
+<span class="petfx" id="pet-fx1"><svg viewBox="0 0 24 24"><use href="#g-heart"/></svg></span>
+<span class="petfx" id="pet-fx2"><svg viewBox="0 0 24 24"><use href="#g-heart"/></svg></span>
+<span class="petfx" id="pet-fx3"><svg viewBox="0 0 24 24"><use href="#g-heart"/></svg></span>
+
+<!-- ============================================================
+     tabBar：首页 / 商城 / 例假 / 相册
+     ⚠️ 「个人」栏已按用户要求删除（小程序端 app.json 也删了）。
+        个人页本体的内容还没定，所以 #scr-me 暂时留着，
+        ?page=me 仍可打开，等想清楚「昵称/积分明细/纪念日设置放哪」再处理。
+     ============================================================ -->
+<div class="tabbar" id="tabbar">
+  <div class="tab on" data-go="home">
+    <span class="ic">🏠</span><span class="tx">首页</span><span class="dot"></span>
+  </div>
+  <div class="tab" data-go="mall">
+    <span class="ic">🛍️</span><span class="tx">商城</span>
+  </div>
+  <div class="tab" data-go="period">
+    <span class="ic">📅</span><span class="tx">例假</span>
+  </div>
+  <div class="tab" data-go="album">
+    <span class="ic">📷</span><span class="tx">相册</span>
+  </div>
+</div>
+
+<!-- 语料：与小程序端共用同一份文件（file:// 下 <script> 直引可行，fetch 不行） -->
+<script src="data/quotes-classic.js"></script>
+<script src="data/quotes-classic2.js"></script>
+<script src="data/quotes-modern.js"></script>
+<script src="data/quotes-tags.js"></script>
+<script src="data/quotes.js"></script>
+<script src="data/anniversary.js"></script>
+<script src="data/weather.js"></script>
+<script src="data/shared-data.js"></script>
+<script src="data/mall.js"></script>
+<script src="data/points.js"></script>
+<!-- 例假模块：顺序不能变（period-ui 依赖前三个）。?v= 用来绕开 Chrome 对 file:// 的外部 JS 缓存 -->
+<script src="data/period.js?v=1"></script>
+<script src="data/period-ui.js?v=1"></script>
+<!-- 共同相册：album-ui 依赖 album。?v= 同样是绕开 file:// 的子资源缓存 -->
+<script src="data/album.js?v=5"></script>
+<script src="data/album-ui.js?v=5"></script>
+<!-- ===== 两人共享状态 + 端到端加密同步 =====
+     加载顺序有依赖：e2e-crypto → sync-store → pairing；anniversary → mood/whisper；
+     最后才是 app-state（它要用前面几个）。别调换。 -->
+<script src="data/e2e-crypto.js?v=1"></script>
+<script src="data/sync-store.js?v=1"></script>
+<script src="data/pairing.js?v=1"></script>
+<script src="data/mood.js?v=1"></script>
+<script src="data/whisper.js?v=1"></script>
+<script src="data/app-state.js?v=1"></script>
+<script src="data/settings-ui.js?v=1"></script>
+<!-- 把「纪念日 / 小猪 / 例假」接到 AppState 上（它们原来只走本机 localStorage，
+     两台手机之间根本同步不了）。必须在 app-state.js 之后、各模块 init 之前。 -->
+<script src="data/app-shared.js?v=1"></script>
+<!-- 「装到桌面」提示条（只在浏览器标签里打开时出现，装好后自动消失） -->
+<script src="data/install-tip.js?v=1"></script>
+<!-- 两个内页（点日期记心情 / 悄悄话对话）：渲染层独立文件，数据层在上面已经加载。
+     顺序：mood-ui 依赖 mood + anniversary；whisper-ui 依赖 whisper + mood（借它做按天分组）。 -->
+<script src="data/mood-ui.js?v=1"></script>
+<script src="data/whisper-ui.js?v=1"></script>
+
+<script>
+(function () {
+  try {
+    if (/[?&]full=1/.test(location.search)) {
+      document.documentElement.setAttribute('data-full', '1')
+    }
+  } catch (e) { /* ignore */ }
+
+  /* ============================================================
+     每日一言
+     语料来自 data/quotes*.js（与本页共用同一份数据，不再内联，
+     避免预览和真机出现两套句子）。
+     逻辑：本地日期天数 % 语料长度 —— 同一天永远是同一句，次日自动换。
+     ============================================================ */
+  function renderQuote(offset) {
+    if (typeof window.Quotes === 'undefined') return
+
+    var d = new Date()
+    var q = offset
+      ? window.Quotes.byIndex(window.Quotes.todayQuote(d).index + offset)
+      : window.Quotes.todayQuote(d)
+
+    var t = document.getElementById('quote-text')
+    if (!t) return
+    t.textContent = q.text
+
+    var s = document.getElementById('quote-src')
+    if (s) {
+      // 出处 · 作者；没有作者就只显示出处
+      s.textContent = q.author && q.author !== '佚名'
+        ? q.source + ' · ' + q.author
+        : q.source
+    }
+  }
+
+  renderQuote(0)
+
+  // ?q=N 预览第 N 句（只是看效果用，不影响按日期取句的逻辑）
+  try {
+    var qm = /[?&]q=(\d+)/.exec(location.search)
+    if (qm && window.Quotes) {
+      var pick = window.Quotes.byIndex(parseInt(qm[1], 10) - 1)
+      var qt = document.getElementById('quote-text')
+      if (qt) qt.textContent = pick.text
+      var qs = document.getElementById('quote-src')
+      if (qs) {
+        qs.textContent = pick.author && pick.author !== '佚名'
+          ? pick.source + ' · ' + pick.author
+          : pick.source
+      }
+    }
+  } catch (e) { /* ignore */ }
+
+  /* ============================================================
+     日期卡
+     日期由设备时间算出；季节按月份粗略划，纯装饰，不追求节气精度。
+     ============================================================ */
+  function renderDate() {
+    var d = new Date()
+    var names = ['日', '一', '二', '三', '四', '五', '六']
+    var wd = d.getDay() === 0 ? '周日' : '周' + names[d.getDay()]
+
+    var mon = d.getMonth() + 1
+    var season = (mon >= 3 && mon <= 5) ? '春天'
+      : (mon >= 6 && mon <= 8) ? '夏天'
+      : (mon >= 9 && mon <= 11) ? '秋天' : '冬天'
+
+    setText('d-day', String(d.getDate()))
+    setText('d-sub', wd + ' · ' + mon + '月 · ' + season)
+  }
+
+  renderDate()
+
+  /* ============================================================
+     天气卡 —— 两人各自所在地，各自显示
+     位置来源优先级（全程不需要用户选城市）：
+       1. 设备定位（wx.getLocation / navigator.geolocation）→ 经纬度直接查
+       2. 共享层里存的坐标（对方的位置，由对方设备上报后同步过来）
+       3. 兜底示例坐标（仅本地演示用）
+     ?uid=A 表示"我是 A"，方便本地同时开两个窗口验证同步。
+     ============================================================ */
+  var MY_UID = (function () {
+    var m = /[?&]uid=([A-Za-z0-9_-]+)/.exec(location.search)
+    return m ? m[1] : 'A'
+  })()
+  var TA_UID = MY_UID === 'A' ? 'B' : 'A'
+
+  /** 兜底坐标：本地预览 / 拒绝授权 / 定位失败时用，保证界面不空着。
+      默认填的是你们俩的城市（我=南宁，TA=深圳），真机上会被实际定位覆盖。 */
+  var FALLBACK_COORD = {
+    A: { lat: 22.8170, lon: 108.3665 },   // 南宁
+    B: { lat: 22.5429, lon: 114.0596 }    // 深圳
+  }
+
+  var myCoord = null        // 本设备定位结果
+  var locating = false
+
+  function paintWeather(side, w) {
+    if (!w) return
+    setText('w-ico-' + side, w.icon || '⛅')
+    setText('w-temp-' + side, (w.temp === undefined || isNaN(w.temp)) ? '--' : w.temp + '°')
+  }
+
+  /** 显示谁的位置：不同城就直接写城市名，比"我/TA"更有信息量 */
+  function paintWho(side, coord, fallbackLabel, otherCoord) {
+    var prof = window.SharedData ? window.SharedData.getProfile(side === 'me' ? MY_UID : TA_UID) : null
+    var name = (prof && prof.name) || fallbackLabel
+
+    var city = ''
+    if (coord) city = window.Weather.nearestMockCity(coord.lat, coord.lon).city
+
+    if (!coord || !city) {
+      setText('w-who-' + side, name)
+      return
+    }
+    // 两人同城时标出来，避免看起来像"两个不同的地方却一样的数据"
+    var same = otherCoord && city === window.Weather.nearestMockCity(otherCoord.lat, otherCoord.lon).city
+    setText('w-who-' + side, same ? city + '（同城）' : city)
+  }
+
+  function renderSide(side, coord, otherCoord) {
+    if (!coord) return
+    var label = side === 'me' ? '我' : 'TA'
+    window.Weather.fetchByCoords(coord.lat, coord.lon).then(function (w) {
+      paintWeather(side, w)
+      paintWho(side, coord, label, otherCoord)
+    }).catch(function () { /* 保持占位 */ })
+  }
+
+  function renderWeather() {
+    if (!window.Weather) return
+
+    // 对方位置：从共享层读（对方设备上报后同步过来）
+    var peerCoord = window.SharedData ? window.SharedData.getLocation(TA_UID) : null
+    if (!peerCoord) peerCoord = FALLBACK_COORD[TA_UID]
+
+    var mine = myCoord || (window.SharedData ? window.SharedData.getLocation(MY_UID) : null)
+    if (!mine) mine = FALLBACK_COORD[MY_UID]
+
+    renderSide('me', mine, peerCoord)
+    renderSide('ta', peerCoord, mine)
+  }
+
+  /** 定位一次，成功后把自己的坐标写进共享层，对方也能读到 */
+  function locateOnce() {
+    // ?lat=&lon= 直接指定我的坐标（无头浏览器没有定位权限，用它验证真实路径）
+    var m = /[?&]lat=(-?[\d.]+)[^&]*&?lon=(-?[\d.]+)/.exec(location.search)
+    if (m) {
+      myCoord = { lat: parseFloat(m[1]), lon: parseFloat(m[2]) }
+      if (window.SharedData) window.SharedData.setLocation(MY_UID, myCoord)
+      renderWeather()
+      return
+    }
+
+    if (locating) return
+    locating = true
+    window.Weather.locate().then(function (c) {
+      locating = false
+      if (!c) return              // 拒绝授权或超时：保持兜底坐标
+      myCoord = c
+      if (window.SharedData) window.SharedData.setLocation(MY_UID, c)
+      renderWeather()
+    }).catch(function () { locating = false })
+  }
+
+  renderWeather()
+  locateOnce()
+
+  // 对方改了昵称 / 上报了新坐标 → 自动重查，不用刷新
+  if (window.SharedData) {
+    window.SharedData.watch('profile', function () { renderWeather() })
+    window.SharedData.watch('location', function () { renderWeather() })
+  }
+
+  /* ============================================================
+     纪念日
+     改动同时写两处：
+       1. 共享层（两人同步的主数据）
+       2. 本地缓存（断网时兜底）
+     对方改动会通过 SharedData.watch('anniv') 推过来，页面自动刷新，
+     不需要重新加载。
+     ============================================================ */
+  var ANNIV_KEY = 'couple_anniv_start'
+  var DEFAULT_START = '2026-05-20'
+
+  /** 按 id 写文本。定义在 IIFE 顶层 ——
+      写进 if 块里的话只有块级可见，renderAnniv 调不到（踩过）。 */
+  function setText(id, v) {
+    var el = document.getElementById(id)
+    if (el) el.textContent = v
+  }
+
+  function getStartKey() {
+    // 1. URL 参数优先（仅预览，不落盘）
+    var m = /[?&]start=(\d{4}-\d{1,2}-\d{1,2})/.exec(location.search)
+    if (m && window.Anniversary && window.Anniversary.parseDate(m[1])) return m[1]
+    // 2. 共享数据（两人同步的那一份）
+    if (window.SharedData) {
+      var shared = window.SharedData.getAnnivStart()
+      if (shared && window.Anniversary && window.Anniversary.parseDate(shared)) return shared
+    }
+    // 3. 本地缓存
+    try {
+      var saved = window.localStorage.getItem(ANNIV_KEY)
+      if (saved && window.Anniversary && window.Anniversary.parseDate(saved)) return saved
+    } catch (e) { /* 隐私模式下 localStorage 可能不可用 */ }
+    // 4. 默认值
+    return DEFAULT_START
+  }
+
+  /** 把周年名 + 具体日期拼成一句可读文案。
+      当天不再写"就是今天"——上方已有角标、右侧已写"🎉 今天"，
+      同一行重复三次反而啰嗦。 */
+  function nextLabel(r) {
+    if (r.isToday) return r.nextYearsLabel
+    return r.nextYearsLabel + ' · ' + r.nextDateLabel
+  }
+
+  /** 长按才改成"几年几月几天"，短了就只说天数 */
+  function fromLabel(r) {
+    if (r.years > 0) {
+      return '从 ' + r.startLabel + ' 开始 · ' + r.years + ' 年 ' + r.months + ' 个月'
+    }
+    if (r.months > 0) {
+      return '从 ' + r.startLabel + ' 开始 · ' + r.months + ' 个月 ' + r.days + ' 天'
+    }
+    return '从 ' + r.startLabel + ' 开始'
+  }
+
+  /** 预览时可用 ?now=YYYY-MM-DD 假装今天是某一天，用来验证纪念日当天等状态 */
+  function getNowOverride() {
+    var m = /[?&]now=(\d{4}-\d{1,2}-\d{1,2})/.exec(location.search)
+    if (m && window.Anniversary && window.Anniversary.parseDate(m[1])) return m[1]
+    return null
+  }
+
+  function renderAnniv() {
+    if (!window.Anniversary) return
+    var r = window.Anniversary.compute(getStartKey(), getNowOverride())
+    var box = document.getElementById('anniv')
+    if (!box || !r) return
+
+    var dayEl = document.getElementById('anniv-days')
+    var fromEl = document.getElementById('anniv-from')
+    var fillEl = document.getElementById('anniv-fill')
+
+    if (r.notStarted) {
+      box.classList.remove('today')
+      if (dayEl) { dayEl.textContent = '—'; dayEl.style.fontSize = '' }
+      var unit0 = document.getElementById('anniv-unit')
+      if (unit0) unit0.style.display = 'none'
+      if (fromEl) fromEl.textContent = '开始日填在了未来（' + r.startLabel + '），请改成正确的日期'
+      setText('anniv-nextlbl', '下一个纪念日')
+      setText('anniv-count', '—')
+      if (fillEl) fillEl.style.width = '0%'
+      return
+    }
+
+    box.classList.toggle('today', !!r.isToday)
+
+    // 大数字：先写纯天数；超过一年则拆成年/月，并把字号缩一点免得撑破。
+    // 注意要把"天"这个单位藏掉，否则会显示成"1年0个月天"。
+    var unitEl = document.getElementById('anniv-unit')
+    if (dayEl) {
+      if (r.years > 0) {
+        dayEl.textContent = r.years + '年' + r.months + '个月'
+        dayEl.style.fontSize = '26px'
+        if (unitEl) unitEl.style.display = 'none'
+      } else {
+        dayEl.textContent = String(r.totalDays)
+        dayEl.style.fontSize = ''
+        if (unitEl) unitEl.style.display = ''
+      }
+    }
+    if (fromEl) fromEl.textContent = fromLabel(r)
+    setText('anniv-nextlbl', nextLabel(r))
+    setText('anniv-count', r.isToday ? '🎉 今天' : '还有 ' + r.daysToNext + ' 天')
+    if (fillEl) fillEl.style.width = r.progressPercent + '%'
+  }
+
+  renderAnniv()
+
+  /* ============================================================
+     情绪日记 · 首页月历  +  悄悄话 · 首页卡片
+     ------------------------------------------------------------
+     数据来源是**真的两人共享状态**（data/app-state.js）：
+       本地改 → 存本机 → 排队加密上传 → 对方轮询拉到 → 合并 → 重画
+     不是演示数据。没配对时也能用（只存本机），状态会诚实标出来（🎀 设置里看）。
+     格子固定 6 行（grid-auto-rows），所以 4/5/6 行的月份卡片高度完全一致，
+     首页不会跟着抖。
+     ============================================================ */
+
+  /* 我的身份（'A' / 'B'）。
+     ?uid= 只是**预览用**；正式身份存在同步配置里（配对时定：
+     先配的那台是 A，粘贴链接码的那台是 B）。
+     ⚠️ 一律用函数取、不要在启动时缓存成变量 —— 设置面板改完身份要立刻生效。 */
+  var UID_PREVIEW = (function () {
+    var m = /[?&]uid=([A-Za-z0-9_-]+)/.exec(location.search)
+    return m ? m[1] : ''
+  })()
+
+  /* 整个 App 唯一一份共享状态（情绪日记 + 悄悄话，以后 anniv/pet 也搬进来） */
+  var APP = (window.AppState && window.AppState.AppState)
+    ? new window.AppState.AppState({ uid: UID_PREVIEW || undefined })
+    : null
+
+  function myUid() { return (APP && APP.uid) || 'A' }
+  function peerUid() { return myUid() === 'A' ? 'B' : 'A' }
+  function appState() {
+    return (APP && APP.state) || { moods: {}, diaries: {}, whispers: [] }
+  }
+  /* 调试句柄：出图脚本和浏览器控制台都用得上（控制台本来就能改本机存储，所以不算新开口子） */
+  window.CoupleApp = APP
+
+  /* 文本转义：悄悄话是**用户输入**，拼进 innerHTML 之前必须转义，
+     否则对方发一句 <img onerror=...> 就是 XSS。 */
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  }
+
+  /* '#RRGGBB' → 'rgba(r,g,b,a)'（心情底色要半透明，直接算式转一下） */
+  function moodRgba(hex, a) {
+    var h = String(hex).replace('#', '')
+    if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2)
+    var n = parseInt(h, 16)
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n }
+
+  function hhmm(ts) {
+    var d = new Date(ts)
+    return pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+  }
+
+  /* 一个心情小图标：me = 方形、ta = 圆形。
+     这一方没记录时给个同样尺寸的隐形占位，保证上下两个位置永远对得上。
+     预设表在 data/mood.js 里（用户说可以自己改，所以只放一处）。 */
+  function moodChip(k, who) {
+    var p = (window.Mood && k) ? window.Mood.preset(k) : null
+    if (!p) return '<span class="chip" style="visibility:hidden"></span>'
+    return '<span class="chip ' + who + '" style="background:' + moodRgba(p.color, .38) + '">' +
+      p.emoji + '</span>'
+  }
+
+  function paintMoodCard() {
+    var grid = document.getElementById('mood-grid')
+    if (!grid) return
+    if (!window.Mood) return
+
+    /* 今天：优先用 ?now= 覆盖（预览/测试用），否则取设备本地日期 */
+    var today = getNowOverride() || window.Mood.todayKey()
+    var tp = today.split('-')
+    var y = parseInt(tp[0], 10), m = parseInt(tp[1], 10)
+
+    var mo = document.getElementById('mood-month')
+    if (mo) mo.textContent = y + '年' + m + '月'
+
+    /* 月历的「格子怎么排、谁能写」全在数据层算（data/mood.js 的 monthView），
+       这里只负责画 —— 首页卡片和以后的点日期面板共用同一份逻辑，不会走偏。 */
+    var mine = myUid(), peer = peerUid()
+    var cells = window.Mood.monthView(appState(), y, m, [mine, peer], today)
+    var html = ''
+
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i]
+      var cls = 'cell' + (c.inMonth ? '' : ' out') + (c.isToday ? ' today' : '')
+      var chips = ''
+      if (c.inMonth) {
+        if (c.hasAny) {
+          /* 上面那个永远是「我」（方形），下面是「对方」（圆形）。
+             谁没记录就画个隐形占位，保证两个人的位置不会上下乱跳。 */
+          chips = moodChip(c.moods[mine], 'me') + moodChip(c.moods[peer], 'ta')
+        } else {
+          /* 两人都没记录 → 一个空的圆圈（参考图里就是这样） */
+          chips = '<span class="chip empty"></span>'
+        }
+      }
+      /* 上下月那几天只留淡日期、不画心情圈 —— 42 个圈会变"答题卡" */
+      html += '<div class="' + cls + '" data-date="' + c.key + '">' +
+                '<span class="d">' + c.day + '</span>' +
+                '<div class="chips">' + chips + '</div>' +
+              '</div>'
+    }
+    grid.innerHTML = html
+  }
+
+  /* 悄悄话卡片：未读角标 + 最后一条摘要 */
+  function paintWhisperCard() {
+    if (!window.Whisper || !APP) return
+    var s = window.Whisper.summary(appState(), myUid())
+    var last = document.getElementById('whisper-last')
+    var un = document.getElementById('whisper-unread')
+    var tm = document.getElementById('whisper-time')
+
+    if (last) {
+      if (!s.total) {
+        last.className = 'last empty'
+        last.textContent = '还没有悄悄话，点进去说第一句'
+      } else {
+        last.className = 'last'
+        last.innerHTML = '<b>' + (s.mine ? '我：' : 'TA：') + '</b>' + esc(s.lastText)
+      }
+    }
+    if (un) {
+      if (s.unread > 0) {
+        un.className = 'unread'
+        un.innerHTML = '<i class="d"></i>' + s.unread + ' 条新消息'
+      } else {
+        un.className = 'unread off'
+      }
+    }
+    if (tm) tm.textContent = s.lastAt ? hhmm(s.lastAt) : ''
+  }
+
+  /** 首页两张卡一起重画（本地改 / 对方数据到达 / 同步出错都会走这里） */
+  function paintHome() {
+    paintMoodCard()
+    paintWhisperCard()
+  }
+  paintHome()
+
+  /* 数据变了就重画。启动时拉一次远端 —— 没配对的话立刻返回，不会卡住首页。 */
+  if (APP) {
+    APP.subscribe(function () { paintHome() })
+    APP.ready()
+  }
+
+  /* ============================================================
+     🎀 设置面板（右上角那个蝴蝶结）
+     ------------------------------------------------------------
+     每个屏幕的导航栏都有一个 .bell，一起挂上，任意页面都能进设置。
+     ============================================================ */
+  ;(function () {
+    if (!window.SettingsUI || !APP) return
+    try {
+      window.SettingsUI.mount(document.body, {
+        app: APP,
+        toast: toast,
+        /* 配对 / 身份变了：首页两张卡要按新身份重画 */
+        onChanged: function () { paintHome() },
+        /* 天气 Key 存了：先清掉旧缓存再重绘，否则还是旧天气 */
+        onWeatherSaved: function () {
+          try { if (window.Weather) window.Weather.clearCache() } catch (e) { /* ignore */ }
+          try { renderWeather() } catch (e) { /* ignore */ }
+        }
+      })
+      var bells = document.querySelectorAll('.bell')
+      for (var i = 0; i < bells.length; i++) {
+        bells[i].style.cursor = 'pointer'
+        bells[i].addEventListener('click', function () { window.SettingsUI.open('main') })
+      }
+      /* 出图/自测用：?settings=1 直接开面板，?settings=first / join 开子页 */
+      var sv = /[?&]settings=([a-z0-9]+)/.exec(location.search)
+      if (sv) window.SettingsUI.open(sv[1] === '1' ? 'main' : sv[1])
+    } catch (e) { /* 设置面板挂不上不该影响首页 */ }
+  })()
+
+  /* ---- 点卡片 ----
+     两个内页（点日期记录、对话页）还在做，先给个**诚实的**提示，
+     不要装作能点。做完之后把它们挂到 window.openMoodPanel / openWhisperPage 上，
+     这里不用再改。 */
+  ;(function () {
+    var w = document.getElementById('whisper-card')
+    if (w) w.addEventListener('click', function () {
+      if (typeof window.openWhisperPage === 'function') window.openWhisperPage()
+      else toast('对话页还在做，下次更新就有了')
+    })
+    var mc = document.getElementById('mood-card')
+    if (mc) mc.addEventListener('click', function (ev) {
+      var cell = (ev.target && ev.target.closest) ? ev.target.closest('.cell') : null
+      if (typeof window.openMoodPanel === 'function') {
+        window.openMoodPanel(cell ? cell.getAttribute('data-date') : '')
+      } else {
+        toast('点日期记录心情的页面还在做，下次更新就有了')
+      }
+    })
+  })()
+
+  // ===== 改日期 =====
+  var panel = document.getElementById('edit-panel')
+  var dateInput = document.getElementById('edit-date')
+
+  function openPanel() {
+    dateInput.value = getStartKey()
+    panel.classList.add('on')
+    // 面板在卡片下方，滚一下免得被 tabBar 挡住
+    try { panel.scrollIntoView({ block: 'center', behavior: 'smooth' }) } catch (e) { /* ignore */ }
+  }
+
+  function closePanel() {
+    panel.classList.remove('on')
+  }
+
+  var editBtn = document.getElementById('anniv-edit')
+  if (editBtn) editBtn.addEventListener('click', openPanel)
+  var cancelBtn = document.getElementById('edit-cancel')
+  if (cancelBtn) cancelBtn.addEventListener('click', closePanel)
+
+  // ?edit=1 直接展开改日期面板（预览用）
+  try {
+    if (/[?&]edit=1/.test(location.search)) openPanel()
+  } catch (e) { /* ignore */ }
+
+  var saveBtn = document.getElementById('edit-save')
+  if (saveBtn) {
+    saveBtn.addEventListener('click', function () {
+      var v = dateInput.value
+      if (!v || !window.Anniversary || !window.Anniversary.parseDate(v)) {
+        // 不用 wx.showToast —— 这段代码要在浏览器预览和小程序里都能跑
+        dateInput.style.borderColor = '#E0749F'
+        var tip = document.getElementById('edit-tip')
+        if (tip) {
+          tip.textContent = '请选择一个有效的日期'
+          tip.style.color = '#E0749F'
+        }
+        return
+      }
+      // 1) 写共享层：这是两人同步的主数据，
+      //    小程序端这里会换成调用云函数 updateAnniv
+      if (window.SharedData) window.SharedData.setAnnivStart(v, MY_UID)
+      // 2) 写本地缓存：断网时兜底显示
+      try { window.localStorage.setItem(ANNIV_KEY, v) } catch (e) { /* ignore */ }
+      closePanel()
+      renderAnniv()
+    })
+  }
+
+  // 对方改了纪念日 → 立刻跟着变，不用刷新
+  if (window.SharedData) {
+    window.SharedData.watch('anniv', function () {
+      // 关键：数据源变了要重新算，不是只把旧值重画一遍
+      renderAnniv()
+    })
+  }
+
+  /* ============================================================
+     积分商城
+     ------------------------------------------------------------
+     左边分类 = 右列表的分区锚点（点菜类小程序的标准做法）：
+     右列分区全部平铺，滚动时左栏自动高亮当前分区，点左栏跳过去。
+
+     商品数据就是下面这个 MALL 数组 —— 改品类、改名字、改积分只动这里。
+     积分价格是占位（都是 520 / 1314 这类好听的数），你定完价我照着改。
+     ============================================================ */
+  /* 商品数据来自 data/mall.js —— 跟小程序端（couple-app/data/mall.js）是**同一份文件**，
+     改品类 / 改名字 / 改积分只动那一个，预览和真机一起变。
+     两边唯一不同的是"图标怎么画"：
+       原型   → 内联 SVG 符号 #g-ic-<icon>
+       小程序 → gen-mall-icons.js 从同一批符号渲染出的 PNG（assets/mall/） */
+  var MALL = (window.Mall && window.Mall.MALL) || []
+  if (!MALL.length) console.warn('[商城] data/mall.js 没加载成功，商城会是空的')
+
+  /** icon 语义 key（'call'）→ 原型的符号 id（'#g-ic-call'） */
+  function symId(icon) { return '#g-ic-' + icon }
+
+  /** 当前选中的分类 —— 点左栏切换，一次只显示一栏（?cat=N 可直接指定，截图用） */
+  var activeCat = (function () {
+    var m = /[?&]cat=(\d+)/.exec(location.search)
+    return m ? parseInt(m[1], 10) : 0
+  })()
+  if (!(activeCat >= 0 && activeCat < MALL.length)) activeCat = 0
+
+  var $ = function (id) { return document.getElementById(id) }
+
+  /** 千分位 / 价格格式化：直接用 data/mall.js 里的实现，不再抄一份 */
+  var fmt = (window.Mall && window.Mall.fmt) || function (n) { return String(n) }
+  var fmtPrice = (window.Mall && window.Mall.fmtPrice) || function (p) { return String(p) }
+
+  /** 商品价参与计算用（字符串转数字） */
+  function pnum(p) {
+    var n = parseFloat(p)
+    return isNaN(n) ? 0 : n
+  }
+
+  /* ---- 轻提示 ---- */
+  var toastTimer = null
+  function toast(msg) {
+    var t = $('toast')
+    if (!t) return
+    t.textContent = msg
+    t.classList.add('on')
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = setTimeout(function () { t.classList.remove('on') }, 1800)
+  }
+
+  /* ---- 商品 id → 数据 ---- */
+  var GOODS = {}
+  ;(function () {
+    for (var i = 0; i < MALL.length; i++) {
+      var g = MALL[i]
+      g.count = g.items.length
+      for (var j = 0; j < g.items.length; j++) {
+        var it = g.items[j]
+        it.cat = g.cat
+        GOODS[it.id] = it
+      }
+    }
+  })()
+
+  /* ---- 画左分类 + 右商品 ---- */
+  function renderMall() {
+    var catsEl = $('mall-cats')
+    var goodsEl = $('mall-goods')
+    if (!catsEl || !goodsEl) return
+
+    var chtml = ''
+    var ghtml = ''
+    for (var i = 0; i < MALL.length; i++) {
+      var g = MALL[i]
+      chtml += '<div class="cat' + (i === activeCat ? ' on' : '') +
+        '" data-i="' + i + '">' + g.cat + '</div>'
+
+      // 每个分类一整块，默认只显示当前选中的那块（?cat=N 可指定）
+      ghtml += '<div class="gblock' + (i === activeCat ? ' on' : '') + '">' +
+        '<div class="gsec"><span>' + g.cat + '</span><b>(' + g.items.length +
+        ')</b><span class="rule"></span></div>'
+
+      for (var j = 0; j < g.items.length; j++) {
+        var it = g.items[j]
+        ghtml +=
+          '<div class="gi" data-id="' + it.id + '">' +
+            '<span class="thumb ' + it.tile + '">' +
+              '<svg viewBox="0 0 32 32"><use href="' + symId(it.icon) + '"/></svg>' +
+            '</span>' +
+            '<div class="info">' +
+              '<div class="nm">' + it.name + '</div>' +
+              '<div class="sub">' + it.sub + '</div>' +
+              '<div class="pr"><svg viewBox="0 0 32 32"><use href="#g-ic-coin"/></svg>' +
+                fmtPrice(it.price) + '<small>积分</small></div>' +
+            '</div>' +
+            '<div class="op" data-op="' + it.id + '"></div>' +
+          '</div>'
+      }
+
+      // 分类里还没挂商品：先放个虚线空位，告诉你"东西加在这儿"
+      if (!g.items.length) {
+        ghtml += '<div class="gempty">这一栏还没有商品</div>'
+      }
+      ghtml += '</div>'
+    }
+    catsEl.innerHTML = '<div class="cats-in">' + chtml + '</div>'
+    goodsEl.innerHTML = ghtml
+
+    /** 点左栏 → 只显示这一栏的商品（不展开全部） */
+    function pickCat(i) {
+      activeCat = i
+      var cats = catsEl.querySelectorAll('.cat')
+      for (var k = 0; k < cats.length; k++) {
+        cats[k].classList.toggle('on', k === i)
+      }
+      var blocks = goodsEl.querySelectorAll('.gblock')
+      for (var m = 0; m < blocks.length; m++) {
+        blocks[m].classList.toggle('on', m === i)
+      }
+      // 换栏后如果已经滚到下面去了，把列表顶拉回视野
+      var grid = document.querySelector('.mallgrid')
+      if (grid) {
+        var top = grid.getBoundingClientRect().top + window.pageYOffset - 10
+        if (window.pageYOffset > top) window.scrollTo(0, top)
+      }
+    }
+
+    var cats = catsEl.querySelectorAll('.cat')
+    for (var k = 0; k < cats.length; k++) {
+      ;(function (c) {
+        c.addEventListener('click', function () {
+          pickCat(parseInt(c.getAttribute('data-i'), 10) || 0)
+        })
+      })(cats[k])
+    }
+
+    // 点 + 加进兑换车
+    goodsEl.addEventListener('click', function (ev) {
+      var el = ev.target
+      while (el && el !== goodsEl && !el.getAttribute('data-act')) el = el.parentNode
+      if (!el || el === goodsEl) return
+      var act = el.getAttribute('data-act')
+      var id = el.getAttribute('data-id')
+      if (act === 'add') cartAdd(id, 1)
+      else if (act === 'minus') cartAdd(id, -1)
+    })
+  }
+
+  /* ---- 兑换车 ---- */
+  var cart = {}          // { goodsId: 数量 }
+  var cartOrder = []     // 保持加入顺序，方便调试
+
+  function cartTotal() {
+    var sum = 0, n = 0
+    for (var id in cart) {
+      if (!cart[id]) continue
+      sum += (GOODS[id] ? pnum(GOODS[id].price) : 0) * cart[id]
+      n += cart[id]
+    }
+    return { sum: sum, n: n }
+  }
+
+  function cartAdd(id, delta) {
+    if (!GOODS[id]) return
+    var cur = cart[id] || 0
+    var next = cur + delta
+    if (next <= 0) {
+      delete cart[id]
+      var oi = cartOrder.indexOf(id)
+      if (oi >= 0) cartOrder.splice(oi, 1)
+    } else {
+      cart[id] = next
+      if (cur === 0) cartOrder.push(id)
+    }
+    paintOps()
+    paintCart()
+  }
+
+  /** 每个商品右侧：没选过 = 一个 +，选过 = − 数量 + 
+      同一件商品可能出现在两个分类里（如"打语音"），
+      所以要用 querySelectorAll 把所有出现位置一起更新。 */
+  function paintOps() {
+    for (var id in GOODS) {
+      var boxes = document.querySelectorAll('.op[data-op="' + id + '"]')
+      if (!boxes.length) continue
+      var q = cart[id] || 0
+      var html = q
+        ? '<span class="m" data-act="minus" data-id="' + id + '">−</span>' +
+          '<span class="q">' + q + '</span>' +
+          '<span class="p" data-act="add" data-id="' + id + '">+</span>'
+        : '<span class="add" data-act="add" data-id="' + id + '">+</span>'
+      for (var i = 0; i < boxes.length; i++) boxes[i].innerHTML = html
+    }
+  }
+
+  function paintCart() {
+    var t = cartTotal()
+    setText('cart-total', fmt(t.sum))
+    setText('cart-count', t.n ? '已选 ' + t.n + ' 件' : '还没选东西')
+
+    var badge = $('cart-badge')
+    if (badge) {
+      badge.textContent = t.n
+      badge.classList.toggle('on', t.n > 0)
+    }
+    var ex = $('cart-ex')
+    if (ex) ex.classList.toggle('off', t.n === 0)
+  }
+
+  /* ---- 签到 ---- */
+  var MY_POINTS_OVERRIDE = (function () {
+    // ?points=12100 直接指定当前积分（只影响本页显示，不落盘，方便看各种状态）
+    var m = /[?&]points=(\d+)/.exec(location.search)
+    return m ? parseInt(m[1], 10) : null
+  })()
+
+  function paintPoints(n) {
+    setText('pts-now', fmt(n))
+  }
+
+  function paintSignin() {
+    var go = $('signin-go')
+    if (!go) return
+    // ?signed=1 假装今天已签到（预览两种状态用）
+    var done = window.Points
+      ? window.Points.signedToday(MY_UID)
+      : false
+    if (/[?&]signed=1/.test(location.search)) done = true
+
+    go.classList.toggle('done', !!done)
+    go.textContent = done ? '已签到 ✓' : '签到'
+
+    var sub = $('signin-sub')
+    if (sub) {
+      var amount = window.Points ? window.Points.SIGNIN_AMOUNT : 520
+      var st = window.Points ? window.Points.get(MY_UID) : null
+      if (done) {
+        // 已签到：能读到连续天数就报出来，读不到就用通用文案
+        sub.textContent = (st && st.signDays)
+          ? '已连续签到 ' + st.signDays + ' 天 · 明天再来 ~'
+          : '今天签过啦，明天再来 ~'
+      } else {
+        sub.textContent = '每天签到可得 ' + amount + ' 积分'
+      }
+    }
+
+    if (!window.Points) { paintPoints(MY_POINTS_OVERRIDE || 0); return }
+    if (MY_POINTS_OVERRIDE !== null) { paintPoints(MY_POINTS_OVERRIDE); return }
+    paintPoints(window.Points.getPoints(MY_UID))
+  }
+
+  ;(function bindSignin() {
+    var go = $('signin-go')
+    if (!go) return
+    go.addEventListener('click', function () {
+      if (go.classList.contains('done')) { toast('今天已经签过啦，明天再来 ~'); return }
+      if (!window.Points) { toast('积分模块没加载'); return }
+
+      var r = window.Points.signIn(MY_UID)
+      if (!r.ok) { toast('今天已经签过啦，明天再来 ~'); return }
+
+      MY_POINTS_OVERRIDE = null
+      paintPoints(r.points)
+      go.classList.add('done')
+      go.textContent = '已签到 ✓'
+      setText('signin-sub', '连续签到 ' + r.signDays + ' 天 · 明天还有 ' + r.gained + ' 积分')
+
+      var fly = $('signin-fly')
+      if (fly) {
+        fly.textContent = '+' + fmt(r.gained)
+        fly.classList.remove('on')
+        void fly.offsetWidth          // 强制重排，动画才能重放
+        fly.classList.add('on')
+      }
+      toast('签到成功，+' + fmt(r.gained) + ' 积分 🎉')
+    })
+  })()
+
+  /* ---- 兑换 ---- */
+  ;(function bindExchange() {
+    var ex = $('cart-ex')
+    if (!ex) return
+    ex.addEventListener('click', function () {
+      if (ex.classList.contains('off')) { toast('先选点想要的东西吧 ~'); return }
+      if (!window.Points) { toast('积分模块没加载'); return }
+
+      var t = cartTotal()
+      // ?points= 只是预览用的显示值，没落盘，所以走预览分支自己扣，
+      // 不去动真实账本（否则会出现"显示够、实际不够"的假报错）
+      var preview = MY_POINTS_OVERRIDE !== null
+      var have = preview ? MY_POINTS_OVERRIDE : window.Points.getPoints(MY_UID)
+
+      if (have < t.sum) {
+        toast('积分不够，还差 ' + fmt(t.sum - have) + ' 分\n再签几天就好啦 ~')
+        return
+      }
+
+      if (preview) {
+        MY_POINTS_OVERRIDE = Math.round((MY_POINTS_OVERRIDE - t.sum) * 100) / 100
+        paintPoints(MY_POINTS_OVERRIDE)
+      } else {
+        var r = window.Points.spend(MY_UID, t.sum)
+        if (!r.ok) { toast('积分不够，还差 ' + fmt(r.short) + ' 分'); return }
+        paintPoints(r.points)
+      }
+
+      cart = {}
+      cartOrder = []
+      paintOps()
+      paintCart()
+      toast('兑换成功！记得到"订单"里看 TA 有没有兑现 💕')
+    })
+  })()
+
+  renderMall()
+
+  // ?cart=call30:2,tea:1 预置兑换车（只看状态用，不落盘）
+  try {
+    var cm = /[?&]cart=([^&]+)/.exec(location.search)
+    if (cm) {
+      var pairs = decodeURIComponent(cm[1]).split(',')
+      for (var pi = 0; pi < pairs.length; pi++) {
+        var kv = pairs[pi].split(':')
+        if (kv[0] && GOODS[kv[0]]) cart[kv[0]] = parseInt(kv[1], 10) || 1
+      }
+    }
+  } catch (e) { /* ignore */ }
+
+  paintOps()
+  paintCart()
+  paintSignin()
+
+  if (window.Points) {
+    window.Points.watch(function () {
+      if (MY_POINTS_OVERRIDE === null) paintPoints(window.Points.getPoints(MY_UID))
+    })
+  }
+
+  // 星点氛围
+  var box = document.getElementById('ambient')
+  var spots = [[7,9],[20,4],[38,15],[58,7],[78,13],[90,22],
+               [12,46],[30,38],[52,55],[72,42],[88,52],
+               [8,76],[26,84],[46,72],[66,82],[86,74]]
+  for (var i = 0; i < spots.length; i++) {
+    var s = document.createElement('span')
+    s.className = 'star'
+    s.style.left = spots[i][0] + '%'
+    s.style.top = spots[i][1] + '%'
+    s.style.opacity = (0.3 + (i % 4) * 0.17).toFixed(2)
+    s.innerHTML = '<svg viewBox="0 0 24 24" fill="#FFC8DE"><use href="#g-star"/></svg>'
+    box.appendChild(s)
+  }
+
+  /* ============================================================
+     小挂件：两人合力养小猪「糯米」（可自由拖动，不固定在首页）
+     素材 prototype/pet/pig_*.png（透明底、脚底已统一对齐）
+     ⚠️ 走路动画没做：交付的 4 张 walk 帧不是同一只猪（比例/朝向都不同），
+        接成循环会「一只猪变一个样」。等重出素材再接（见 小猪_生图AI清单.md）
+     ============================================================ */
+  ;(function petModule() {
+    var WIDGET = document.getElementById('petwidget')
+    if (!WIDGET) return
+    var POP = document.getElementById('petpop')
+
+    /* ⚠️ 这里必须用**闭包里的 toast**（本文件上面定义的那个函数），
+       不能写 window.toast —— 它从来没有被挂到 window 上（只有 window.CoupleApp / window.Pet）。
+       踩过的坑（2026-10-11，用户报「小猪能拖但点喂食/逗它玩没反应」）：
+         两个动作函数里都写了 `if (window.toast) window.toast(...)`，
+         `window.toast` 是 undefined → 所以那个 if 觉得"不加也行"，
+         真点下去时调用本身抛 TypeError（不是被 if 挡住），事件处理器当场中断：
+           · doAction 里在 render() 之前抛 → 面板数值不动、动画不播
+           · bind 的处理器里抛得更早 → 连 doAction 都进不去
+         表现就是「拖拽正常（没走这条路）、四个按钮全哑」，而且不弹任何错误提示。
+       现在改成直接调 toast()，另外下面几个地方也别再写 window.toast。 */
+    var showToast = (typeof toast === 'function') ? toast : function () {}
+
+    var KEY = 'couple_shared_pet'          // 与 SharedData 的 localStorage 前缀一致
+    var HOUR = 3600 * 1000
+    var SLEEP_FROM = 23, SLEEP_TO = 8      // 23:00~08:00 自动睡
+
+    /* 每小时的衰减速度。刻意做得慢：两人各自上班，一天照顾两三次就够。
+       0.9/小时 ≈ 一天掉 22 点，不会因为一天没管就归零。 */
+    var DECAY = { food: 3.6, mood: 2.4, clean: 1.6, energy: 0 }
+    var SLEEP_RECOVER = 12                 // 睡觉时每小时回体力
+
+    var DEFAULT_STATE = { food: 76, mood: 82, clean: 68, energy: 88 }
+
+    var ACTIONS = {
+      feed:  { img: 'pig_eat',     cls: 'eating',  label: '喂食',   msg: '吃饱啦 🍚',   d: { food: 28, mood: 4, clean: -4 } },
+      drink: { img: 'pig_drink',   cls: 'eating',  label: '喝水',   msg: '喝饱水啦 💧', d: { food: 8, mood: 3, clean: 2 } },
+      play:  { img: 'pig_happy',   cls: 'petting', label: '逗它玩', msg: '好开心 💗',   d: { mood: 26, energy: -8, food: -2 } },
+      bath:  { img: 'pig_bath',    cls: 'washing', label: '洗澡',   msg: '香香的 🛁',   d: { clean: 40, mood: -4 } }
+    }
+
+    var $ = function (id) { return document.getElementById(id) }
+    function clamp(v) { return Math.max(0, Math.min(100, Math.round(v * 10) / 10)) }
+
+    /* ---------- 读写共享状态（localStorage + storage 事件，与纪念日同一套机制） ---------- */
+    function read() {
+      /* ★ 走 SharedData（会跟私有 Gist 加密同步的那一份）。
+         原来直接读 localStorage 的 couple_shared_pet —— 那只在本机，
+         两台手机永远看不到对方的投喂。SharedData 已经挂到 AppState 上
+         （见 data/app-shared.js），所以这里改成走它。 */
+      if (window.SharedData && window.SharedData.getPet) {
+        try { return window.SharedData.getPet() } catch (e) { /* 退回本机存储 */ }
+      }
+      try {
+        var raw = localStorage.getItem(KEY)
+        if (!raw) return null
+        return JSON.parse(raw)
+      } catch (e) { return null }
+    }
+    function write(s) {
+      if (window.SharedData && window.SharedData.setPet) {
+        try { window.SharedData.setPet(s); return } catch (e) { /* 退回本机存储 */ }
+      }
+      try { localStorage.setItem(KEY, JSON.stringify(s)) } catch (e) { /* ignore */ }
+    }
+
+    /* 按「上次结算时间」补算离线期间的衰减。
+       状态不存死值 —— 存快照 + 时间戳，谁打开谁结算，两人算出来一样。 */
+    function settle(s) {
+      var now = Date.now()
+      var from = s.at || now
+      var hours = (now - from) / HOUR
+      if (hours <= 0) return s
+
+      // 睡眠时段体力回升，其余时段按 DECAY 掉
+      var asleep = isSleepHour(new Date(now).getHours())
+      var step = Math.min(hours, 72)          // 超过 3 天没管就按 3 天算，免得一回来全 0
+      s.food = clamp(s.food - DECAY.food * step)
+      s.mood = clamp(s.mood - DECAY.mood * step)
+      s.clean = clamp(s.clean - DECAY.clean * step)
+      if (asleep) s.energy = clamp(s.energy + SLEEP_RECOVER * step)
+      else s.energy = clamp(s.energy - 1.2 * step)
+      s.at = now
+      return s
+    }
+
+    function isSleepHour(h) { return h >= SLEEP_FROM || h < SLEEP_TO }
+
+    /* ---------- 亲密度 / 阶段：由累计互动次数决定 ---------- */
+    function stageOf(care) {
+      if (care >= 60) return { n: 3, name: '成年', cls: 'stage3', scale: 1.15 }
+      if (care >= 25) return { n: 2, name: '半大', cls: 'stage2', scale: 1 }
+      return { n: 1, name: '幼崽', cls: 'stage1', scale: .82 }
+    }
+
+    /* ---------- 我 / TA ---------- */
+    var MY_UID = (function () {
+      var m = /[?&]uid=([A-Za-z0-9_-]+)/.exec(location.search)
+      return m ? m[1] : 'A'
+    })()
+    var TA_UID = MY_UID === 'A' ? 'B' : 'A'
+
+    /* 挂件默认位置（归一化 0~1，两人同步）。
+       首页是小猪唯一待的地方，所以默认必须落在**卡片下方的空白区**右下角：
+       原来的 {0.80, 0.58} 正好压在纪念日卡的「4个月20天 / 还有222天」上。
+       三个地方要用同一个值，别只改一处（踩过：只改了 applySavedPos，位置没变）。 */
+    var DEFAULT_POS = { x: 0.76, y: 0.86 }
+
+    function blank() {
+      return {
+        v: DEFAULT_STATE.food, mood: DEFAULT_STATE.mood,
+        clean: DEFAULT_STATE.clean, energy: DEFAULT_STATE.energy,
+        care: 0, at: Date.now(),
+        last: {},                      // uid -> { act, t }
+        pos: { x: DEFAULT_POS.x, y: DEFAULT_POS.y }
+      }
+    }
+
+    var S = (function init() {
+      var s = read()
+      if (!s || typeof s.v === 'undefined') {
+        // 兼容旧字段名
+        if (s && typeof s.food !== 'undefined') s.v = s.food
+        else s = blank()
+      }
+      if (!s.last) s.last = {}
+      if (!s.pos) s.pos = { x: DEFAULT_POS.x, y: DEFAULT_POS.y }
+      // 一次性迁移：老默认值 {0.80,0.58} 等于「从来没拖过」，升级到新默认。
+      // 不加这段的话，已经开过页面的人（位置早就写进共享层了）位置不会变。
+      if (s.pos && Math.abs(s.pos.x - 0.80) < 0.001 && Math.abs(s.pos.y - 0.58) < 0.001) {
+        s.pos = { x: DEFAULT_POS.x, y: DEFAULT_POS.y }
+      }
+      if (typeof s.care !== 'number') s.care = 0
+      if (!s.at) s.at = Date.now()
+      return s
+    })()
+
+    /* ---------- 渲染 ---------- */
+    var timers = {}
+    function play(cls, img, ms) {
+      WIDGET.classList.remove('eating', 'petting', 'washing')
+      if (cls) {
+        // 强制重排，让同一个 class 连续触发也能重放动画
+        void WIDGET.offsetWidth
+        WIDGET.classList.add(cls)
+      }
+      if (img) setImg(img)
+      if (cls && timers[cls]) clearTimeout(timers[cls])
+      if (cls) {
+        timers[cls] = setTimeout(function () {
+          WIDGET.classList.remove(cls)
+          setImg(idleImg())
+        }, ms || 1300)
+      }
+    }
+
+    function setImg(name) {
+      var el = $('pet-img')
+      if (!el) return
+      var src = 'pet/' + name + '.png'
+      if (el.getAttribute('src') !== src) el.setAttribute('src', src)
+    }
+
+    /** 走路：来回走几步。位置用 JS 推进（CSS 只管帧） */
+    var walking = false
+    function walk(steps) {
+      if (walking) return
+      if (drag) return
+      if (asleep()) return
+      // 不在首页就别走了：看不见还在走，既费 CPU，回来时位置也莫名变了
+      if (document.body.classList.contains('not-home')) return
+      walking = true
+      WIDGET.classList.add('walking')
+      var r = WIDGET.getBoundingClientRect()
+      var x0 = r.left
+      var dir = (x0 > vw() * 0.55) ? -1 : 1          // 靠右就往左走，反之往右
+      var n = steps || 4
+      var stepPx = 9
+      var i = 0
+      var t = setInterval(function () {
+        i++
+        var nx = x0 + dir * stepPx * i
+        // 撞到边界就掉头走完剩下的
+        if (nx < 4 || nx > vw() - W - 4) { dir = -dir; x0 = WIDGET.getBoundingClientRect().left }
+        place(x0 + dir * stepPx * i, WIDGET.getBoundingClientRect().top)
+        if (i >= n * 2) {
+          clearInterval(t)
+          walking = false
+          WIDGET.classList.remove('walking')
+          setImg(idleImg())
+          // 走完把新位置存下来
+          var rr = WIDGET.getBoundingClientRect()
+          S.pos = { x: rr.left / Math.max(1, vw() - W), y: rr.top / Math.max(1, vh() - W - 78) }
+          write(S)
+        }
+      }, 400)
+    }
+
+    function asleep() { return isSleepHour(new Date().getHours()) }
+
+    /** 待机该用哪张图：睡觉 / 脏了 / 难过 / 正常 */
+    function idleImg() {
+      if (asleep()) return 'pig_sleep'
+      if (S.clean < 35) return 'pig_dirty'
+      if (S.mood < 30) return 'pig_sad'
+      return 'pig_stand'
+    }
+
+    function stageScale() {
+      // 阶段越大只略微放大（素材本身比例已经不同，这里只做轻微区分）
+      return stageOf(S.care).scale
+    }
+
+    function render() {
+      var st = stageOf(S.care)
+      setText('pop-level', st.name)
+      var lv = $('pop-level')
+      if (lv) lv.className = 'lv ' + st.cls
+
+      // 注意：饱食度统一读 S.v（历史上叫过 food，读混了会显示 NaN%）
+      if (typeof S.v !== 'number') S.v = (typeof S.food === 'number') ? S.food : DEFAULT_STATE.food
+      var vals = { food: S.v, mood: S.mood, clean: S.clean, energy: S.energy }
+      for (var k in vals) {
+        var n = Number(vals[k])
+        if (!isFinite(n)) n = 0
+        var v = Math.round(n)
+        setText('pet-v-' + k, v + '%')
+        var bar = $('pet-b-' + k)
+        if (bar) bar.style.width = v + '%'
+      }
+
+      // 状态偏低时给状态条加个提示色
+      ;['food', 'mood', 'clean', 'energy'].forEach(function (k) {
+        var el = $('pet-b-' + k)
+        if (!el) return
+        el.style.filter = vals[k] < 30 ? 'saturate(.45)' : ''
+      })
+
+      WIDGET.classList.toggle('sleeping', asleep())
+      if (!WIDGET.classList.contains('eating') &&
+          !WIDGET.classList.contains('petting') &&
+          !WIDGET.classList.contains('washing')) {
+        setImg(idleImg())
+      }
+
+      paintPeer()
+      paintPts()
+    }
+
+    function setText(id, v) {
+      var el = $(id)
+      if (el) el.textContent = v
+    }
+
+    /** 显示对方最近做了什么 */
+    function paintPeer() {
+      var mine = S.last && S.last[MY_UID]
+      var peer = S.last && S.last[TA_UID]
+      var box = $('pet-peer'), txt = $('pet-peer-txt')
+      if (!box || !txt) return
+
+      if (!peer) {
+        box.classList.add('none')
+        txt.textContent = mine ? '你先' + mine.act + '了，等 TA 来 ~' : '还没有互动记录，先喂它一口吧'
+        return
+      }
+      box.classList.remove('none')
+      var mins = Math.round((Date.now() - peer.t) / 60000)
+      var when = mins < 1 ? '刚刚' : (mins < 60 ? mins + ' 分钟前' : Math.round(mins / 60) + ' 小时前')
+      txt.textContent = 'TA ' + when + peer.act + '了 · 亲密度 ' + S.care
+    }
+
+    /** 顶部积分：复用商城的 Points 模块，不另开一套账本 */
+    function paintPts() {
+      var el = $('pop-pts')
+      if (!el) return
+      var n = 0
+      if (window.Points && window.Points.getPoints) {
+        try { n = window.Points.getPoints(MY_UID) || 0 } catch (e) { n = 0 }
+      }
+      el.textContent = Math.round(n).toLocaleString('en-US')
+    }
+
+    /* ---------- 动作 ---------- */
+    function doAction(kind) {
+      var a = ACTIONS[kind]
+      if (!a) return
+      if (typeof S.v !== 'number') S.v = (typeof S.food === 'number') ? S.food : DEFAULT_STATE.food
+      S.v = clamp(S.v + (a.d.food || 0))
+      S.mood = clamp(S.mood + (a.d.mood || 0))
+      S.clean = clamp(S.clean + (a.d.clean || 0))
+      S.energy = clamp(S.energy + (a.d.energy || 0))
+      S.care = (S.care || 0) + 1
+      S.at = Date.now()
+      S.last = S.last || {}
+      S.last[MY_UID] = { act: a.label, t: Date.now(), by: MY_UID }
+
+      write(S)
+      play(a.cls, a.img, a.cls === 'petting' ? 900 : 1400)
+      if (kind === 'play') hearts()
+      render()
+      showToast(a.msg)
+    }
+
+    /** 摸头：三个爱心从挂件头顶错开飞出（fixed 定位，所以要跟着挂件走） */
+    function hearts() {
+      var r = WIDGET.getBoundingClientRect()
+      var cx = r.left + r.width / 2
+      var cy = r.top + r.height * 0.18
+      for (var i = 1; i <= 3; i++) {
+        ;(function (n) {
+          var el = $('pet-fx' + n)
+          if (!el) return
+          el.classList.remove('go')
+          el.style.left = (cx - 9) + 'px'
+          el.style.top = cy + 'px'
+          void el.offsetWidth
+          el.style.setProperty('--dx', ((n - 2) * 26) + 'px')
+          el.style.animationDelay = (n * 70) + 'ms'
+          el.classList.add('go')
+          setTimeout(function () { el.classList.remove('go') }, 1400 + n * 70)
+        })(i)
+      }
+    }
+
+    /* ============================================================
+       拖动挂件 —— 就是「揪住后脖颈」的手感
+         · 按住后脖颈位置抓起来（抓取点固定在抓的那一刻，不会突然跳）
+         · 拖的时候吊挂摆动，并夹在视口内
+         · 松手回弹摆几下，位置写进共享层（对方那边也跟着挪）
+       拖动阈值 6px：小于它算点击（打开/收起操作面板），大于它才算拖
+       ============================================================ */
+    var W = 100                 // 挂件边长（与 CSS 一致）
+    var DRAG_MIN = 6
+    var drag = null
+
+    function vw() { return document.documentElement.clientWidth || window.innerWidth }
+    function vh() { return document.documentElement.clientHeight || window.innerHeight }
+
+    function place(px, py) {
+      // 夹在视口内，别拖丢了（底部避开 tabBar）
+      var maxX = vw() - W - 4
+      var maxY = vh() - W - 78
+      px = Math.max(4, Math.min(maxX, px))
+      py = Math.max(4, Math.min(maxY, py))
+      WIDGET.style.transform = 'translate3d(' + px + 'px,' + py + 'px,0)'
+      if (POP && POP.classList.contains('on')) positionPop()
+      return { x: px, y: py }
+    }
+
+    /** 面板定位策略：
+        水平 —— 挂件在屏幕左半就放右边，右半就放左边（避免贴边被切）
+        垂直 —— 挂件在上半屏就放下方，下半屏就放上方（避免把挂件自己盖住） */
+    function positionPop() {
+      if (!POP) return
+      var r = WIDGET.getBoundingClientRect()
+      var pw = POP.offsetWidth || 236
+      var ph = POP.offsetHeight || 180
+      var GAP = 10
+
+      var left = r.left + r.width + GAP
+      if (left + pw > vw() - 6) left = r.left - pw - GAP
+      if (left < 6) left = Math.max(6, (vw() - pw) / 2)
+
+      var below = r.top + r.height + GAP
+      var above = r.top - ph - GAP
+      var top = (r.top + r.height / 2 < vh() / 2) ? below : above
+      if (top + ph > vh() - 6) top = above          // 下方放不下就翻到上方
+      if (top < 6) top = below                       // 上方也放不下就回下方
+      top = Math.max(6, Math.min(vh() - ph - 6, top))
+
+      POP.style.left = left + 'px'
+      POP.style.top = top + 'px'
+    }
+
+    function applySavedPos() {
+      // 默认落在**卡片下方的空白区**右下角（见上面的 DEFAULT_POS）
+      var p = S.pos || DEFAULT_POS
+      place(p.x * (vw() - W), p.y * (vh() - W - 78))
+    }
+
+    WIDGET.addEventListener('pointerdown', function (e) {
+      if (e.button !== undefined && e.button !== 0) return
+      var r = WIDGET.getBoundingClientRect()
+      drag = {
+        id: e.pointerId,
+        sx: e.clientX, sy: e.clientY,
+        ox: r.left, oy: r.top,
+        moved: false
+      }
+      try { WIDGET.setPointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+      e.preventDefault()
+    })
+
+    WIDGET.addEventListener('pointermove', function (e) {
+      if (!drag || e.pointerId !== drag.id) return
+      var dx = e.clientX - drag.sx
+      var dy = e.clientY - drag.sy
+
+      if (!drag.moved) {
+        if (dx * dx + dy * dy < DRAG_MIN * DRAG_MIN) return
+        drag.moved = true
+        WIDGET.classList.remove('settle')
+        WIDGET.classList.add('grabbed')      // 开始吊挂
+        setImg('pig_held')                   // 换成「被拎着」那张
+        if (POP) POP.classList.remove('on')  // 拖的时候收起面板，免得挡手
+      }
+      place(drag.ox + dx, drag.oy + dy)
+    })
+
+    function endDrag(e) {
+      if (!drag || e.pointerId !== drag.id) return
+      var moved = drag.moved
+      drag = null
+      try { WIDGET.releasePointerCapture(e.pointerId) } catch (err) { /* ignore */ }
+
+      if (!moved) {                          // 没动 -> 当点击
+        togglePop()
+        return
+      }
+      WIDGET.classList.remove('grabbed')
+      // 回弹摆几下
+      void WIDGET.offsetWidth
+      WIDGET.classList.add('settle')
+      setTimeout(function () { WIDGET.classList.remove('settle') }, 1100)
+      setImg(idleImg())
+
+      // 位置写共享层，对方那边也跟着挪
+      var r = WIDGET.getBoundingClientRect()
+      S.pos = {
+        x: r.left / Math.max(1, vw() - W),
+        y: r.top / Math.max(1, vh() - W - 78)
+      }
+      S.at = S.at || Date.now()
+      write(S)
+      render()
+    }
+
+    WIDGET.addEventListener('pointerup', endDrag)
+    WIDGET.addEventListener('pointercancel', function (e) {
+      if (!drag) return
+      drag = null
+      WIDGET.classList.remove('grabbed')
+    })
+
+    /* ---- 操作面板开合 ---- */
+    var popTimer = null
+    function togglePop() {
+      if (!POP) return
+      var on = POP.classList.toggle('on')
+      if (on) {
+        positionPop()
+        render()
+        if (popTimer) clearTimeout(popTimer)
+        popTimer = setTimeout(function () { POP.classList.remove('on') }, 9000)  // 9 秒后自动收
+      }
+    }
+    function closePop() { if (POP) POP.classList.remove('on') }
+
+    document.addEventListener('pointerdown', function (e) {
+      if (!POP || !POP.classList.contains('on')) return
+      if (POP.contains(e.target) || WIDGET.contains(e.target)) return
+      closePop()
+    }, true)
+
+    bind('pet-feed', 'feed')
+    bind('pet-drink', 'drink')
+    bind('pet-play', 'play')
+    bind('pet-bath', 'bath')
+    function bind(id, kind) {
+      var el = $(id)
+      if (el) el.addEventListener('click', function (e) {
+        e.stopPropagation()
+        /* 睡着了照样能照顾：先把它叫醒（换回清醒的样子），再执行这个动作。
+           原来这里直接 `return`（只弹一句"嘘…它睡着了"），配合上面的 bug 就成了"点了毫无反应"。
+           29:00 ~ 08:00 是睡觉时段，用户半夜点它本来就很正常，不该什么都没有。 */
+        if (asleep()) wakeUp()
+        doAction(kind)
+        if (popTimer) { clearTimeout(popTimer); popTimer = setTimeout(function () { closePop() }, 9000) }
+      })
+    }
+
+    /** 被叫醒：去掉睡觉状态、换回清醒的图，并补一句提示 */
+    function wakeUp() {
+      WIDGET.classList.remove('sleeping')
+      setImg(idleImg())
+      S.at = S.at || Date.now()
+      showToast('它被叫醒啦 🌞')
+    }
+
+    /* ---------- 对方改了 → 自动刷新（storage 事件跨窗口） ---------- */
+    window.addEventListener('storage', function (e) {
+      if (e.key !== KEY) return
+      var s = read()
+      if (!s) return
+      S = settle(s)
+      S.last = S.last || {}
+      applySavedPos()
+      render()
+    })
+
+    window.addEventListener('resize', function () {
+      applySavedPos()
+      if (POP && POP.classList.contains('on')) positionPop()
+    })
+
+    /* ---------- 启动：先结算离线衰减，再渲染 ---------- */
+    S = settle(S)
+    write(S)
+    render()
+    // 每 30 秒结算一次（页面开着时状态也会慢慢掉）
+    setInterval(function () { S = settle(read() || S); write(S); render() }, 30000)
+
+    /* 预览参数：
+         ?pet=80,40,90,70   直接指定 饱食,心情,清洁,体力（不落盘）
+         ?care=70           指定亲密度（决定阶段）
+         ?peertime=15       假装对方 15 分钟前互动过 */
+    try {
+      var pv = /[?&]pet=([\d,]+)/.exec(location.search)
+      if (pv) {
+        var parts = pv[1].split(',')
+        S.v = clamp(+parts[0] || 0); S.mood = clamp(+parts[1] || 0)
+        S.clean = clamp(+parts[2] || 0); S.energy = clamp(+parts[3] || 0)
+      }
+      var cv = /[?&]care=(\d+)/.exec(location.search)
+      if (cv) S.care = +cv[1]
+      var pt = /[?&]peertime=(\d+)/.exec(location.search)
+      if (pt) {
+        S.last = S.last || {}
+        S.last[TA_UID] = { act: '喂食', t: Date.now() - (+pt[1]) * 60000, by: TA_UID }
+      }
+      render()
+    } catch (e) { /* ignore */ }
+
+    /* 挂件位置：
+         ?petpos=x,y  归一化 0~1（预览/截图用，不落盘）
+         ?petopen=1   直接展开操作面板（截图用）
+         ?petdrag=1   预览「被揪住吊挂」的样子（截图用） */
+    try {
+      var pm = /[?&]petpos=([\d.]+),([\d.]+)/.exec(location.search)
+      if (pm) S.pos = { x: Math.max(0, Math.min(1, +pm[1])), y: Math.max(0, Math.min(1, +pm[2])) }
+    } catch (e) { /* ignore */ }
+
+    // 位置要在布局完成后才算得准
+    function boot() {
+      applySavedPos()
+      try {
+        if (/[?&]petopen=1/.test(location.search)) togglePop()
+        if (/[?&]petdrag=1/.test(location.search)) {
+          WIDGET.classList.add('grabbed')
+          setImg('pig_held')
+        }
+        if (/[?&]petwalk=1/.test(location.search)) walk()
+      } catch (e) { /* ignore */ }
+    }
+    if (document.readyState === 'complete') setTimeout(boot, 0)
+    else window.addEventListener('load', function () { setTimeout(boot, 0) })
+    applySavedPos()   // 先摆一次，避免首帧闪在左上角
+
+    /* 没事的时候偶尔走两步（每 24~40 秒一次），让它看起来是活的 */
+    ;(function scheduleWalk() {
+      var delay = 24000 + Math.random() * 16000
+      setTimeout(function () {
+        walk()
+        scheduleWalk()
+      }, delay)
+    })()
+
+    // 让别的模块能读到（个人页/商城以后要用）
+    window.Pet = {
+      get: function () { return S },
+      stage: stageOf,
+      action: doAction,
+      open: togglePop,
+      close: closePop
+    }
+  })()
+
+  // 切换页面
+  var SCREENS = { home: 'scr-home', mall: 'scr-mall', period: 'scr-period', album: 'scr-album', me: 'scr-me' }
+
+  /**
+   * 模块懒挂载：第一次切到该页时才生成 DOM。
+   * 例假/相册都自带渲染（PeriodUI.mount / AlbumUI.mount），
+   * 这里只负责给容器和兜底报错（渲染崩了也要让人看见原因，别留白页）。
+   */
+  var mounted = {}
+  function mountSlot(name, slotId, fn) {
+    if (mounted[name]) return
+    var slot = document.getElementById(slotId)
+    if (!slot || typeof fn !== 'function') return
+    mounted[name] = true
+    try {
+      window['__' + name + 'State'] = fn(slot)
+    } catch (e) {
+      slot.innerHTML = '<div class="card" style="margin-top:14px;padding:16px">' +
+        name + ' 模块渲染失败：' + (e && e.message ? e.message : e) + '</div>'
+      console.error('[mount] ' + name + ' failed', e)
+    }
+  }
+
+  function go(name) {
+    if (name === 'period') {
+      mountSlot('period', 'period-slot', function (el) { return window.PeriodUI.mount(el) })
+    } else if (name === 'album') {
+      mountSlot('album', 'album-slot', function (el) { return window.AlbumUI.mount(el) })
+      /* 打开相册就顺手拉一次云端 —— 不然要等轮询（最长 60 秒）才看到对方传的照片 */
+      try { if (window.CoupleApp && window.CoupleApp.pullAlbumNow) window.CoupleApp.pullAlbumNow() } catch (e) { /* ignore */ }
+    }
+    var keys = Object.keys(SCREENS)
+    for (var i = 0; i < keys.length; i++) {
+      var el = document.getElementById(SCREENS[keys[i]])
+      if (el) el.classList.toggle('on', keys[i] === name)
+    }
+    var tabs = document.querySelectorAll('#tabbar .tab')
+    for (var j = 0; j < tabs.length; j++) {
+      var on = tabs[j].getAttribute('data-go') === name
+      tabs[j].classList.toggle('on', on)
+      var dot = tabs[j].querySelector('.dot')
+      if (on && !dot) {
+        var d = document.createElement('span')
+        d.className = 'dot'
+        tabs[j].appendChild(d)
+      } else if (!on && dot) {
+        tabs[j].removeChild(dot)
+      }
+    }
+    /* 小猪挂件只在首页出现（用户 2026-10-10 要求）。
+       用 body 上的开关而不是隐藏元素本身：模块内部随时可能重渲染，改 body 最稳。 */
+    try {
+      document.body.classList.toggle('not-home', name !== 'home')
+      /* ★ 记下当前在哪一页。相册那个「齿轮」悬浮按钮是挂在 <body> 上的，
+         一旦打开过相册就永远飘在屏幕上（首页、商城都能看到）——
+         CSS 靠这个属性把它限制在相册页（见 album.css）。 */
+      document.body.setAttribute('data-page', name)
+      var pp = document.getElementById('petpop')
+      if (pp && name !== 'home') pp.classList.remove('on')   // 别留下悬空的操作面板
+    } catch (e) { /* ignore */ }
+
+    try { window.scrollTo(0, 0) } catch (e) { /* ignore */ }
+
+    /* ★ 记住当前这一页：刷新之后还回到这一页（用户 2026-10-11 要求，
+       原来一刷新就跳回首页，像网页不像 App）。 */
+    try { localStorage.setItem('couple_last_page', name) } catch (e) { /* ignore */ }
+  }
+
+  var tabs = document.querySelectorAll('#tabbar .tab')
+  for (var k = 0; k < tabs.length; k++) {
+    (function (tab) {
+      tab.addEventListener('click', function () {
+        var g = tab.getAttribute('data-go')
+        if (g) go(g)
+      })
+    })(tabs[k])
+  }
+
+  // 允许 ?page=mall / ?page=me 直接打开某页（预览与截图用）
+  // 没有 ?page= 时，回到上次待的那一页（刷新不跳回首页）
+  function restoreLastPage() {
+    try {
+      var m = /[?&]page=([a-z]+)/.exec(location.search)
+      if (m && SCREENS[m[1]]) { go(m[1]); return m[1] }
+      var lastPage = null
+      try { lastPage = localStorage.getItem('couple_last_page') } catch (e) { lastPage = null }
+      /* 调试用的参数在的时候不要乱跳（截图/自测要的是首页） */
+      var debugging = /[?&](art|mood|whisper|seed|settings|pwa|full|now|uid|view|set|open)=/.test(location.search)
+      if (lastPage && SCREENS[lastPage] && lastPage !== 'home' && !debugging) { go(lastPage); return lastPage }
+    } catch (e) { /* ignore */ }
+    return 'home'
+  }
+  window.__restoreLastPage = restoreLastPage     /* 自测用 */
+  restoreLastPage();
+
+  /* ============================================================
+     把浏览器的默认动作关掉（用户 2026-10-11 要求：别像网页）
+     ------------------------------------------------------------
+     · 长按/右键菜单（"搜索这段文字"、复制、存储图像）
+     · 拖动选择文字（输入框、文本域、以及标了 .sel-ok 的除外）
+     只在原型网页里做 —— 不影响小程序端。
+
+     ⚠️ 前面这个 `;` 不能省（前面的语句没写分号）：
+        少一个分号，JS 会把下面的 (function(){})() 当成
+        "restoreLastPage()(function(){})()" —— 于是整个 IIFE 不执行、
+        这一整段脚本直接抛错，后面所有代码全被跳过。
+        而且**不报错到界面上**，只是"长按菜单还在、刷新还会跳首页"，
+        极难查。实测踩到过。
+     ============================================================ */
+  ;(function () {
+    function isEditable(el) {
+      if (!el) return false
+      var tag = (el.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea') return true
+      if (el.isContentEditable) return true
+      /* 想把口令指纹/链接码复制走的地方放行 */
+      if (el.closest && el.closest('.sel-ok, .st-fp .v, .st-in')) return true
+      return false
+    }
+    document.addEventListener('contextmenu', function (e) {
+      if (isEditable(e.target)) return
+      e.preventDefault()
+    }, true)
+    document.addEventListener('selectstart', function (e) {
+      if (isEditable(e.target)) return
+      e.preventDefault()
+    })
+    /* ⚠️ 这里**千万不能**再写「双击时 preventDefault」那种 touchend 拦截。
+       实测后果：全局记录上一次点击时间，任何两次点击挨得近（<300ms）就会被吃掉，
+       用户表现为"蝴蝶结（设置）点不了了" —— 明明点到了却没反应，极难查。
+       双击缩放交给 CSS 的 touch-action:manipulation 就够了。 */
+  })()
+
+  // ?art=1 单人放大看造型（逐像素检查图形用）
+  try {
+    if (/[?&]art=1/.test(location.search)) {
+      var defsSvg = document.querySelector('svg[aria-hidden="true"]')
+      var box = document.createElement('div')
+      box.style.cssText = 'display:flex;gap:24px;padding:20px;background:#fff;' +
+        'align-items:flex-start;position:relative;z-index:99'
+      box.innerHTML = '<div style="text-align:center">' +
+        '<svg viewBox="-10 -10 200 235" style="width:300px;height:352px;display:block;' +
+        'outline:1px dashed #f0c"><use href="#g-pet-bunny"/></svg>' +
+        '<div style="font:700 12px sans-serif">bunny</div></div>'
+      // 只清屏幕内容，必须保留 defs 图形库，否则 <use> 渲染成空白
+      var kids = [].slice.call(document.body.children)
+      kids.forEach(function (el) { if (el !== defsSvg) el.parentNode.removeChild(el) })
+      document.body.appendChild(box)
+    }
+  } catch (e) { /* ignore */ }
+
+  /* ============================================================
+     两个内页（点日期记心情 / 悄悄话对话）
+     ------------------------------------------------------------
+     首页那两张卡的点击**早就留好钩子**了（见上面的「点卡片」那段）：
+       点日期 → window.openMoodPanel(dateKey)
+       点卡片 → window.openWhisperPage()
+     所以这里只做三件事：init → mount（浮层挂 body）→ 挂钩子。
+     模块自己的渲染、事件委托都在 data/mood-ui.js / data/whisper-ui.js 里，
+     本文件只留这几行 —— 别把大段代码抄回 index.html。
+
+     ⚠️ 两个浮层都挂 <body>：.content{z-index:1} 是层叠上下文，
+        装在里面的话 z-index 调多高都翻不过 .tabbar(99)，底部按钮会被整条吃掉。
+     ============================================================ */
+  ;(function () {
+    if (!APP) return
+    var pageOpts = {
+      app: APP,
+      toast: toast,
+      /* 数据变了（本地改 / 对方数据拉下来）→ 首页两张卡重画 */
+      onDataChanged: function () { try { paintHome() } catch (e) { /* ignore */ } }
+    }
+    try {
+      if (window.MoodUI) {
+        window.MoodUI.init(pageOpts)
+        window.MoodUI.mount()
+        window.openMoodPanel = function (dateKey) { window.MoodUI.open(dateKey || '') }
+      }
+    } catch (e) { console.error('[mood-ui] 挂载失败', e) }
+    try {
+      if (window.WhisperUI) {
+        window.WhisperUI.init(pageOpts)
+        window.WhisperUI.mount()
+        window.openWhisperPage = function () { window.WhisperUI.open() }
+      }
+    } catch (e) { console.error('[whisper-ui] 挂载失败', e) }
+  })()
+
+  ;(function () {
+    if (!APP) return
+    /* ★ 先把「纪念日 / 小猪 / 例假 / 相册」接到这份会同步的 state 上，再 ready()（拉云端）。
+       顺序不能反：反了的话，拉到对方数据时这些模块还没接上，界面不会跟着变
+       （要等下一次轮询才刷）。 */
+    try {
+      if (window.AppShared) {
+        var r = window.AppShared.attach(APP)
+        if (!r.shared || !r.album) console.warn('[app-shared] 挂载不完整', r)
+      }
+    } catch (e) { console.error('[app-shared] 挂载失败', e) }
+    APP.ready()
+  })()
+
+  /* 出图/自测用：?whisper=1 / ?whisper=demo 直接开对话页（?mood= 由 mood-ui 自己处理） */
+  try {
+    var wspParam = /[?&]whisper=/.test(location.search)
+    /* ★ 上次停在对话页 → 刷新还回对话页（用户 2026-10-11 要求：刷新别跳回首页） */
+    var wspLast = false
+    try { wspLast = localStorage.getItem('couple_last_whisper') === '1' } catch (e) { wspLast = false }
+    var dbg = /[?&](art|mood|seed|settings|pwa|full|now|uid|view|set|open|page)=/.test(location.search)
+    if ((wspParam || (wspLast && !dbg)) && window.WhisperUI) window.WhisperUI.open()
+  } catch (e) { /* ignore */ }
+
+  /* 对话页开/关时记一笔，供刷新后恢复（WhisperUI 自己会改 body 上的类名） */
+  try {
+    var wspWatch = setInterval(function () {
+      if (!window.WhisperUI) return
+      var open = !!document.querySelector('.wsp-page.on')
+      try { localStorage.setItem('couple_last_whisper', open ? '1' : '0') } catch (e) { /* ignore */ }
+    }, 700)
+    /* 页面隐藏时不用记了，省点电 */
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && window.WhisperUI) {
+        var open = !!document.querySelector('.wsp-page.on')
+        try { localStorage.setItem('couple_last_whisper', open ? '1' : '0') } catch (e) { /* ignore */ }
+      }
+    })
+  } catch (e) { /* ignore */ }
+
+  /* ============================================================
+     PWA：装到手机桌面后的适配 + Service Worker 注册
+     ============================================================ */
+  try {
+    var standalone = false
+    try { standalone = window.matchMedia('(display-mode: standalone)').matches } catch (e1) { /* 老浏览器 */ }
+    if (window.navigator.standalone === true) standalone = true   /* iOS Safari 专有属性 */
+    if (/[?&]pwa=1/.test(location.search)) standalone = true      /* 预览/出图用：强制 standalone 外观 */
+    if (standalone) document.body.classList.add('pwa')
+  } catch (e) { /* ignore */ }
+
+  /* ============================================================
+      「装到桌面」提示条
+      ------------------------------------------------------------
+      用户 2026-10-11 的原话："感觉跟浏览器很像""每次进软件都有像浏览器一样的加载框"。
+      根因就是**一直在浏览器标签里打开**：标签页永远带网址栏和加载进度条。
+      装到桌面 → 独立窗口，没有网址栏。所以首页顶部提示一次。
+      （standalone 或用户点过 ✕ 就不显示，逻辑都在 data/install-tip.js 里）
+      ============================================================ */
+  try {
+    if (window.InstallTip) {
+      window.InstallTip.init({
+        slot: document.getElementById('home-slot'),
+        toast: toast
+      })
+    }
+  } catch (e) { console.error('[install-tip] 失败', e) }
+
+  try {
+    /* ⚠️ file:// 下 Service Worker 不存在（也不该有），所以先判协议 */
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () { /* 注册失败不影响使用 */ })
+      })
+    }
+  } catch (e) { /* ignore */ }
+
+  /* 安装提示：Chrome 认为「可以装」时会发这个事件（需要 https + manifest + SW）。
+     事件只能触发一次，而且 prompt() 必须在用户手势里调 —— 所以先存下来，
+     设置面板里给一个「装到桌面」按钮。用户找不到浏览器菜单入口时，这是最省事的路径。 */
+  try {
+    window.addEventListener('beforeinstallprompt', function (ev) {
+      ev.preventDefault()          /* 先拦掉浏览器自己那个小横条，我们自己给按钮 */
+      window.__installEvent = ev
+      try { document.dispatchEvent(new CustomEvent('couple-installable')) } catch (e2) { /* 老浏览器 */ }
+    })
+    window.addEventListener('appinstalled', function () {
+      window.__installEvent = null
+      try { toast('装好了！以后从桌面图标打开就行') } catch (e2) { /* ignore */ }
+    })
+  } catch (e) { /* ignore */ }
+})()
+</script>
+</body>
+</html>

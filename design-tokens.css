@@ -1,0 +1,110 @@
+/* ============================================================
+   恋爱小管家 · 设计令牌
+   ------------------------------------------------------------
+   风格: 美乐蒂风（唯一版本）
+   设计语言提炼(非复刻形象):
+     白兔毛 + 粉/红兜帽(盖耳) + 长耷拉帽耳 + 外婆手作
+   母题: 兜帽 · 荷叶边 · 爱心 · 星点
+   方法论借鉴:
+     - Innei/Pastel (MIT): kawaii = 高亮度 + 低彩度; 语义化 token
+     - leepule/animal-island-uniapp (MIT): 低饱和暖色 + 圆润形态
+   ============================================================ */
+
+:root {
+  /* ---------- 基底 ---------- */
+  --page-bg:        #FFF5F9;
+  --page-bg-2:      #FFE8F2;
+  --surface:        #FFFCF8;          /* 奶油白，不用纯白 */
+  --surface-2:      #FFF7FB;
+  --surface-sunken: #FFEDF4;
+
+  /* ---------- 主色 ---------- */
+  --primary:      #F4A7C4;            /* 柔粉 */
+  --primary-deep: #E0749F;            /* 需要对比度时的深一档 */
+  --primary-soft: #FFDCEA;
+  --primary-ink:  #FFFFFF;
+  --accent:       #FFC8DE;
+  --accent-2:     #FFE7F1;
+  --accent-3:     #FFF3F8;
+
+  /* ---------- 文字 ---------- */
+  --ink:    #5C4550;
+  --ink-2:  #96798A;
+  --ink-3:  #C9B2C0;
+
+  /* ---------- 结构 ---------- */
+  --line:        #F8DFEA;
+  --line-strong: #EFC3D6;
+  --radius-card: 26px;
+  --radius-pill: 999px;
+  --radius-chip: 14px;
+
+  /* ---------- 阴影 ---------- */
+  --shadow-card: 0 5px 20px rgba(228,150,186,.15);
+  --shadow-fab:  0 8px 22px rgba(228,150,186,.26);
+
+  /* ---------- 组件专用 ---------- */
+  --hero-bg:    linear-gradient(158deg,#FFC2DC 0%,#F4A7C4 56%,#E88FB4 100%);
+  --bar-bg:     linear-gradient(90deg,#FFC8DE,#F4A7C4);
+  --ring-track: #FFDCEA;
+
+  /* ---------- 商城：商品缩略图配色（每对 bg/ink 成对使用） ---------- */
+  --tile-pink-bg:  #FFE7F1;   --tile-pink-ink:  #E0749F;
+  --tile-blue-bg:  #EAF3FB;   --tile-blue-ink:  #6E9CC4;
+  --tile-warm-bg:  #FDF0E2;   --tile-warm-ink:  #C98A4E;
+  --tile-lilac-bg: #F1EDFB;   --tile-lilac-ink: #8E7CC3;
+  --tile-rose-bg:  #FFEFF4;   --tile-rose-ink:  #E58C86;
+
+  /* ---------- 悄悄话（奶油纸 + 雾紫 · 夜色私语） ----------
+     与已有的四张卡都不撞：
+       日期=暖米黄 / 天气=冷灰蓝 / 纪念日=粉浅棕黄 / 每日一言=粉紫渐变。
+     这套走「夜色」——淡紫夜空 + 稀疏星点，一眼能和上面几张分开。 */
+  --whisper-bg:       #F2ECFA;
+  --whisper-glow:     rgba(160,132,216,.30);
+  --whisper-glow-2:   rgba(198,180,232,.26);
+  --whisper-ink:      #5B4B7A;
+  --whisper-ink-2:    #8578A6;
+  --whisper-ink-3:    #A99CC4;
+  --whisper-accent:   #B79FE0;   /* 点缀主色：未读角标底 / 图形 */
+  --whisper-accent-2: #7E68B8;   /* 需要对比度时深一档：文字 / 箭头 */
+  --whisper-star:     rgba(150,120,210,.32);   /* 背景星点 */
+  --whisper-line:     rgba(150,124,196,.32);
+  --whisper-shadow:   0 6px 18px rgba(150,124,196,.20);
+
+  /* ---------- 情绪日记（薄荷奶绿 · 治愈感） ----------
+     全站唯一出现过的绿色相，和暖黄/冷蓝/棕黄/粉紫都不撞。 */
+  --mood-bg:       #E9F5EE;
+  --mood-glow:     rgba(120,190,160,.30);
+  --mood-glow-2:   rgba(170,220,196,.26);
+  --mood-ink:      #3F6B58;
+  --mood-ink-2:    #6E9483;
+  --mood-ink-3:    #9CBBAC;
+  --mood-accent:   #7CC2A0;
+  --mood-accent-2: #4E9175;
+  --mood-today:    #E5895C;   /* 今天的日期字（参考图是橙色） */
+  --mood-line:     rgba(110,180,150,.34);
+  --mood-shadow:   0 6px 18px rgba(110,180,150,.20);
+  /* 情绪日记 · 内页（点日期后弹出的面板）与首页卡片同一套色，
+     这里补的是卡片上没有的几处：纸张底色 / 心情胶囊 / 计数提示。
+     凡是 --mood-* / --whisper-* 都在 design-tokens.css 里，页面不写死色值。 */
+  --mood-paper:    #F7FCF9;   /* 面板纸张：比首页卡片更浅，衬出下面的卡片 */
+  --mood-cream:    #FDF7EE;   /* 「TA 的那半」底色（暖，和我的凉绿分开） */
+  --mood-coral:    #E5895C;   /* 和 --mood-today 同色，用于「写错/超字数」提示 */
+  --mood-cream-ink:#8A7A66;
+
+  /* ---------- 悄悄话 · 对话页（奶油纸 + 雾紫，与首页卡片同一族） ---------- */
+  --whisper-bg-deep: #E7DCF7;               /* 对方气泡 / 顶栏：比首页底色深一点 */
+  --whisper-me:      linear-gradient(150deg,#FFC8DE 0%,#F0A6C8 100%);  /* 我的气泡 */
+  --whisper-ta:      #F4EEFB;               /* 对方气泡 */
+  --whisper-paper:   #FBF8FF;               /* 对话页纸张 */
+  --whisper-time:    #B0A3C8;               /* 时间戳 / 状态字 */
+
+  /* ---------- 节奏 ---------- */
+  --gap-page: 16px;
+  --gap-card: 12px;
+  --gap-sec: 20px;
+  --fs-hero: 22px;
+  --fs-title: 18px;
+  --fs-body: 13px;
+  --fs-small: 11.5px;
+}

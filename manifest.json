@@ -1,0 +1,35 @@
+{
+  "name": "恋爱小管家",
+  "short_name": "小管家",
+  "description": "给两个人用的私用小应用：每日情话、恋爱纪念日、两人天气、情绪日记、悄悄话、桌宠小猪。数据端到端加密，服务器只存密文。",
+  "lang": "zh-CN",
+  "start_url": "./index.html",
+  "scope": "./",
+  "id": "./index.html",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#FFF5F9",
+  "theme_color": "#F4A7C4",
+  "categories": ["lifestyle", "social"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

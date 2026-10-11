@@ -1,0 +1,61 @@
+/* ============================================================
+   恋爱小管家 · 「装到桌面」提示条
+   ------------------------------------------------------------
+   为什么要有这个：
+     在浏览器标签里打开 ≠ 装成 App。浏览器标签会一直带着**网址栏和加载进度条**，
+     用户的原话是"感觉跟浏览器很像""每次进软件都有像浏览器一样的加载框"。
+     装到桌面之后是独立窗口：没有网址栏、打开更快、能离线看。
+
+   只在「没有装到桌面」的时候出现，用户可以点 ✕ 永久关掉。
+   选择器统一带 it- 前缀。
+   ============================================================ */
+
+.it-card{
+  display:flex;align-items:center;gap:10px;
+  margin:0 0 var(--gap-card, 12px);
+  padding:12px 12px 12px 14px;
+  border-radius:var(--radius-card);
+  background:var(--surface);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow-card);
+  position:relative;
+}
+.it-ic{
+  flex:0 0 auto;width:34px;height:34px;border-radius:11px;
+  background:var(--primary-soft);display:grid;place-items:center;
+  font-size:17px;line-height:1;
+}
+.it-tx{flex:1 1 auto;min-width:0}
+.it-t{font-size:13px;font-weight:800;color:var(--ink);
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.it-t .tag{
+  font-size:10.5px;font-weight:800;color:var(--primary-ink);
+  background:var(--primary);border-radius:var(--radius-pill);padding:2px 7px;
+}
+.it-d{font-size:11.5px;color:var(--ink-2);margin-top:3px;line-height:1.5}
+.it-d b{color:var(--primary-deep)}
+.it-go{
+  flex:0 0 auto;border:0;cursor:pointer;
+  font:800 12px/1 inherit;color:var(--primary-ink);
+  background:var(--hero-bg);border-radius:var(--radius-pill);
+  padding:9px 13px;box-shadow:var(--shadow-fab);
+}
+.it-go:active{transform:scale(.95)}
+.it-x{
+  position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;
+  border:1px solid var(--line-strong);background:var(--surface);
+  color:var(--ink-3);font:800 12px/1 inherit;cursor:pointer;
+  display:grid;place-items:center;
+}
+.it-x:active{transform:scale(.92)}
+
+/* 已经装到桌面（standalone）→ 整块不显示 */
+body.pwa .it-card{display:none}
+.it-card.gone{display:none}
+
+/* 手动步骤（自动安装不可用时展开） */
+.it-steps{
+  margin-top:8px;font-size:11.5px;color:var(--ink-2);line-height:1.65;
+  background:var(--surface-2);border-radius:var(--radius-chip);
+  padding:9px 11px;white-space:pre-line;
+}

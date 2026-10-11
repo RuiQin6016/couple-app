@@ -1,0 +1,248 @@
+/* ============================================================
+   情绪日记 · 点日期面板（独立模块，选择器全部带 md- 前缀）
+   ------------------------------------------------------------
+   色值一律来自 design-tokens.css 的 --mood-*（另外带一层写死的兜底，
+   模块单独打开时也不会变成透明）。页面里**不要**再写色值。
+
+   ⚠️ 浮层必须挂在 <body> 上（data/mood-ui.js 里 appendChild(document.body)）：
+      index.html 的 .content{position:relative;z-index:1} 是层叠上下文，
+      装在里面的元素 z-index 调多高都翻不过 .tabbar(99) —— 面板底部的
+      「保存」会被整条吃掉（相册模块踩过一模一样的坑，见设计系统速查 §八·八）。
+
+   ⚠️ 底部按钮的位置一律走 CSS 变量 --tab-h（index.html 里定义，
+      PWA 模式下 = 84px + 安全区）。**别写死 84px / 92px**。
+      面板本身是全屏抽屉，不需要让 tabbar —— 它盖在 tabbar 之上（z-index:190 > 99）。
+   ============================================================ */
+
+/* ---- 首页月历「点日期记录」的暗示：格子可点 ---- */
+.moodcard .cell{cursor:pointer}
+.moodcard .cell:active{transform:scale(.94)}
+.moodcard .hint{cursor:pointer}
+
+/* ============================================================
+   浮层外壳：遮罩 + 抽屉
+   ============================================================ */
+.md-mask{
+  position:fixed;inset:0;z-index:189;
+  background:rgba(63,107,88,.30);
+  opacity:0;pointer-events:none;transition:opacity .22s ease;
+}
+.md-mask.on{opacity:1;pointer-events:auto}
+
+.md-sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:190;
+  max-height:92vh;max-height:92dvh;
+  display:flex;flex-direction:column;
+  background:var(--mood-paper,#F7FCF9);
+  border-radius:26px 26px 0 0;
+  border-top:1.5px solid var(--mood-line,rgba(110,180,150,.34));
+  box-shadow:0 -12px 34px rgba(90,150,125,.26);
+  transform:translateY(102%);
+  transition:transform .26s cubic-bezier(.22,1,.3,1);
+  overscroll-behavior:contain;
+}
+.md-sheet.on{transform:translateY(0)}
+
+/* 手机横屏 / 桌面宽屏：抽屉变成居中的一张卡，别拉成一整条 */
+@media (min-width:520px){
+  .md-sheet{
+    left:50%;right:auto;bottom:0;
+    width:480px;transform:translate(-50%,102%);
+    border-radius:26px 26px 0 0;
+  }
+  .md-sheet.on{transform:translate(-50%,0)}
+}
+
+/* ---- 把手 ---- */
+.md-handle{
+  flex:0 0 auto;width:42px;height:4px;border-radius:99px;
+  background:var(--mood-line,rgba(110,180,150,.34));
+  margin:9px auto 0;
+}
+.md-grab{height:15px;flex:0 0 auto}
+
+/* ---- 顶栏：关闭 / 日期 / 前后一天 ---- */
+.md-top{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:2px 14px 10px;border-bottom:1px solid var(--mood-line,rgba(110,180,150,.34));
+}
+.md-x{
+  width:32px;height:32px;flex:0 0 auto;border-radius:50%;
+  background:#fff;border:1.5px solid var(--mood-line,rgba(110,180,150,.34));
+  color:var(--mood-ink-2,#6E9483);display:grid;place-items:center;
+  font-size:14px;font-weight:800;cursor:pointer;
+}
+.md-x:active{transform:scale(.92)}
+.md-date{
+  flex:1;min-width:0;text-align:center;
+  font-size:15.5px;font-weight:800;color:var(--mood-ink,#3F6B58);
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.md-date .md-dow{font-size:11px;font-weight:700;color:var(--mood-ink-2,#6E9483)}
+.md-todaypill{
+  font-size:9.5px;font-weight:800;letter-spacing:.4px;
+  padding:2px 7px;border-radius:99px;
+  background:var(--mood-accent,#7CC2A0);color:#fff;
+}
+.md-nav{
+  width:30px;height:30px;flex:0 0 auto;border-radius:50%;
+  background:#fff;border:1.5px solid var(--mood-line,rgba(110,180,150,.34));
+  color:var(--mood-ink-2,#6E9483);display:grid;place-items:center;
+  font-size:15px;font-weight:800;line-height:1;cursor:pointer;
+  font-family:system-ui,sans-serif;
+}
+.md-nav:active{transform:scale(.92)}
+.md-nav.off{opacity:.32;pointer-events:none}
+
+/* ---- 滚动区 ---- */
+.md-body{
+  flex:1 1 auto;min-height:0;overflow-y:auto;
+  padding:12px 14px 12px;-webkit-overflow-scrolling:touch;
+}
+
+/* ---- 可写的提示 / 未来的日子 ---- */
+.md-tip{
+  display:flex;align-items:center;gap:7px;
+  padding:9px 12px;border-radius:14px;margin-bottom:10px;
+  font-size:11.5px;font-weight:700;line-height:1.6;
+  background:#FFF8EC;border:1px solid #F5E2C4;color:#9A7233;
+}
+.md-tip.err{background:#FDECEA;border-color:#F3CFC9;color:#B04A3A}
+.md-tip b{font-weight:800}
+
+/* ============================================================
+   两块：我的 / TA 的
+   ============================================================ */
+.md-side{
+  border-radius:20px;padding:12px 13px 13px;margin-bottom:11px;
+  background:#fff;border:1.5px solid var(--mood-line,rgba(110,180,150,.34));
+  box-shadow:0 4px 14px rgba(110,180,150,.12);
+}
+.md-side.ta{
+  background:var(--mood-cream,#FDF7EE);
+  border-color:rgba(217,162,107,.36);
+  box-shadow:0 4px 14px rgba(217,162,107,.14);
+}
+.md-side-hd{
+  display:flex;align-items:center;gap:7px;margin-bottom:9px;
+}
+.md-side-hd .who{
+  font-size:12.5px;font-weight:800;letter-spacing:.5px;
+  color:var(--mood-accent-2,#4E9175);
+}
+.md-side.ta .md-side-hd .who{color:#B07C42}
+.md-side-hd .tag{
+  margin-left:auto;font-size:10px;font-weight:800;
+  padding:3px 9px;border-radius:99px;
+  background:var(--mood-bg,#E9F5EE);color:var(--mood-ink-2,#6E9483);
+}
+.md-side.ta .md-side-hd .tag{background:#FBF0E0;color:var(--mood-cream-ink,#8A7A66)}
+.md-side-hd .tag.on{background:var(--mood-accent,#7CC2A0);color:#fff}
+.md-side.ta .md-side-hd .tag.on{background:#D9A26B;color:#fff}
+
+/* ---- 8 种心情胶囊 ---- */
+.md-moods{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:7px;
+}
+.md-mood{
+  position:relative;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 2px 7px;border-radius:15px;cursor:pointer;
+  background:var(--mood-bg,#E9F5EE);
+  border:1.5px solid transparent;
+  transition:transform .12s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.md-mood .em{font-size:19px;line-height:1.05}
+.md-mood .nm{font-size:10.5px;font-weight:800;color:var(--mood-ink-2,#6E9483)}
+.md-mood:active{transform:scale(.94)}
+/* 选中：底色用这个心情自己的色（由脚本 inline 写 --mc），加实线描边 + 对勾 */
+.md-mood.on{
+  border-color:var(--mood-accent-2,#4E9175);
+  box-shadow:0 3px 10px rgba(78,145,117,.22);
+}
+.md-mood.on .nm{color:var(--mood-ink,#3F6B58)}
+.md-mood .tick{
+  position:absolute;right:5px;top:5px;width:14px;height:14px;border-radius:50%;
+  background:var(--mood-accent-2,#4E9175);color:#fff;
+  font-size:9px;font-weight:800;line-height:14px;text-align:center;
+  display:none;
+}
+.md-mood.on .tick{display:block}
+/* 只读（TA 那半 / 未来的日子）：能看清，但不能点 */
+.md-moods.readonly .md-mood{cursor:default;pointer-events:none;opacity:.92}
+.md-moods.readonly .md-mood:not(.on){opacity:.5;filter:grayscale(.35)}
+
+/* ---- 日记 ---- */
+.md-ta{
+  width:100%;box-sizing:border-box;margin-top:11px;
+  padding:11px 12px;min-height:104px;
+  font-family:inherit;font-size:13px;line-height:1.72;font-weight:600;
+  color:var(--mood-ink,#3F6B58);
+  background:var(--mood-bg,#E9F5EE);
+  border:1.5px solid var(--mood-line,rgba(110,180,150,.34));
+  border-radius:15px;resize:vertical;-webkit-appearance:none;
+}
+.md-side.ta .md-ta{background:#FFFCF6;border-color:rgba(217,162,107,.34);color:#7A6248}
+.md-ta:focus{outline:none;border-color:var(--mood-accent,#7CC2A0)}
+.md-ta[readonly]{background:#fff;border-style:dashed;color:var(--mood-cream-ink,#8A7A66)}
+.md-ta::placeholder{color:var(--mood-ink-3,#9CBBAC);font-weight:600}
+
+.md-foot{
+  display:flex;align-items:center;gap:9px;margin-top:9px;
+}
+.md-count{
+  font-size:11px;font-weight:700;color:var(--mood-ink-3,#9CBBAC);
+  font-variant-numeric:tabular-nums;
+}
+.md-count.over{color:var(--mood-coral,#E5895C);font-weight:800}
+.md-save{
+  margin-left:auto;flex:0 0 auto;
+  padding:9px 20px;border-radius:99px;cursor:pointer;
+  background:linear-gradient(150deg,#8ED0B0 0%,#5FAE8C 100%);color:#fff;
+  font-size:12.5px;font-weight:800;letter-spacing:.5px;
+  box-shadow:0 6px 16px rgba(95,174,140,.30);
+}
+.md-save:active{transform:translateY(1px)}
+.md-save.off{background:var(--mood-bg,#E9F5EE);color:var(--mood-ink-3,#9CBBAC);box-shadow:none}
+.md-saved{
+  font-size:11px;font-weight:800;color:var(--mood-accent-2,#4E9175);
+  opacity:0;transition:opacity .2s;
+}
+.md-saved.on{opacity:1}
+
+/* ---- TA 的日记：只读，用纸的样子而不是输入框 ---- */
+.md-paper{
+  margin-top:11px;padding:11px 12px;min-height:60px;
+  border-radius:15px;background:#FFFCF6;
+  border:1px dashed rgba(217,162,107,.44);
+  font-size:12.5px;line-height:1.72;font-weight:600;color:#7A6248;
+  white-space:pre-wrap;word-break:break-word;
+}
+.md-paper.empty{
+  color:var(--mood-cream-ink,#8A7A66);font-weight:700;opacity:.75;
+  display:flex;align-items:center;min-height:52px;
+}
+
+/* ---- 底部：这个月的小统计 ---- */
+.md-sum{
+  flex:0 0 auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:9px 14px calc(11px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--mood-line,rgba(110,180,150,.34));
+  background:#fff;
+}
+.md-sum .k{font-size:11px;font-weight:800;color:var(--mood-ink-2,#6E9483);margin-right:2px}
+.md-sum .it{
+  font-size:11px;font-weight:700;color:var(--mood-ink-2,#6E9483);
+  padding:3px 8px;border-radius:99px;background:var(--mood-bg,#E9F5EE);
+  font-variant-numeric:tabular-nums;
+}
+.md-sum .it b{font-weight:800;color:var(--mood-ink,#3F6B58)}
+.md-sum .empty{margin-right:auto}
+
+/* 整页导出模式（?full=1）：抽屉不要再 fixed，跟着长图走 */
+html[data-full="1"] .md-sheet{
+  position:static;transform:none;max-height:none;width:auto;
+  margin:16px;border-radius:26px;border:1.5px solid var(--mood-line,rgba(110,180,150,.34));
+}
+html[data-full="1"] .md-mask{display:none}
