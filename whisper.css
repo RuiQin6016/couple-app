@@ -1,0 +1,270 @@
+/* ============================================================
+   悄悄话 · 对话页（独立模块，选择器全部带 wsp- 前缀）
+   ------------------------------------------------------------
+   色值一律来自 design-tokens.css 的 --whisper-*（带一层兜底值）。
+   同一个色系和首页那张「悄悄话」卡是**一族的**：奶油纸 + 雾紫夜空。
+
+   ⚠️ 对话页是**全屏浮层**，挂在 <body> 上，z-index:195 ——
+      要盖过 .tabbar(99)，但不能盖过设置面板(.st-overlay 200)。
+      别放进 .content 里（那是层叠上下文，翻不过 tabbar）。
+   ⚠️ 输入条的位置：`bottom:0` + padding-bottom 吃安全区。
+      不要用 --tab-h 把它顶起来 —— 对话页本身就盖住了 tabbar。
+   ============================================================ */
+
+.wsp-page{
+  position:fixed;left:0;right:0;top:0;bottom:0;z-index:195;
+  display:flex;flex-direction:column;
+  background:var(--whisper-paper,#FBF8FF);
+  opacity:0;pointer-events:none;
+  transform:translateY(10px);
+  transition:opacity .2s ease,transform .22s cubic-bezier(.22,1,.3,1);
+}
+.wsp-page.on{opacity:1;pointer-events:auto;transform:translateY(0)}
+
+/* 宽屏（出图/桌面）：居中一条，别拉成整屏 */
+@media (min-width:560px){
+  .wsp-page{
+    left:50%;right:auto;width:520px;transform:translate(-50%,10px);
+    box-shadow:0 0 0 1px var(--whisper-line,rgba(150,124,196,.32)),0 10px 40px rgba(150,124,196,.22);
+  }
+  .wsp-page.on{transform:translate(-50%,0)}
+}
+
+/* ============================================================
+   顶栏
+   ============================================================ */
+.wsp-top{
+  flex:0 0 auto;position:relative;
+  display:flex;align-items:center;gap:9px;
+  padding:calc(9px + env(safe-area-inset-top)) 13px 11px;
+  background:linear-gradient(160deg,#F4EEFC 0%,#EBE1F8 100%);
+  border-bottom:1px solid var(--whisper-line,rgba(150,124,196,.32));
+}
+.wsp-top .bk{
+  width:32px;height:32px;flex:0 0 auto;border-radius:50%;
+  background:#fff;color:var(--whisper-accent-2,#7E68B8);
+  display:grid;place-items:center;cursor:pointer;
+  border:1px solid var(--whisper-line,rgba(150,124,196,.32));
+  font-size:16px;font-weight:800;line-height:1;
+}
+.wsp-top .bk:active{transform:scale(.93)}
+.wsp-top .ttl{flex:1;min-width:0}
+.wsp-top .ttl b{
+  display:block;font-size:15.5px;font-weight:800;color:var(--whisper-ink,#5B4B7A);
+  letter-spacing:.4px;
+}
+.wsp-top .ttl i{
+  display:block;font-style:normal;font-size:10.5px;font-weight:700;
+  color:var(--whisper-ink-3,#A99CC4);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.wsp-top .plane{
+  width:30px;height:30px;flex:0 0 auto;color:var(--whisper-accent,#B79FE0);
+  opacity:.9;
+}
+.wsp-top .plane svg{width:100%;height:100%;display:block}
+
+/* 本机没配对时的提醒（不假装能同步） */
+.wsp-warn{
+  flex:0 0 auto;display:flex;align-items:center;gap:7px;
+  padding:8px 13px;font-size:11px;font-weight:700;line-height:1.55;
+  background:#FFF8EC;color:#9A7233;border-bottom:1px solid #F5E2C4;
+}
+.wsp-warn.err{background:#FDECEA;color:#B04A3A;border-color:#F3CFC9}
+.wsp-warn .go{
+  margin-left:auto;flex:0 0 auto;cursor:pointer;
+  padding:4px 10px;border-radius:99px;background:#fff;
+  border:1px solid currentColor;font-size:10.5px;font-weight:800;
+}
+
+/* ============================================================
+   消息区
+   ============================================================ */
+.wsp-list{
+  flex:1 1 auto;min-height:0;overflow-y:auto;
+  padding:12px 13px 14px;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+}
+/* 背景：柔光 + 稀疏星点。**全部用 radial-gradient 当背景**，
+   不用带负偏移的装饰元素 —— 负偏移会把 scrollWidth 撑大，窄屏会横向滚动
+   （已在 .love / .daily-quote 上各踩过一次，见设计系统速查 §九）。 */
+.wsp-list{
+  background-image:
+    radial-gradient(circle at 14% 8%,var(--whisper-glow,rgba(160,132,216,.30)) 0,transparent 42%),
+    radial-gradient(circle at 88% 76%,var(--whisper-glow-2,rgba(198,180,232,.26)) 0,transparent 46%),
+    radial-gradient(circle at 30% 42%,var(--whisper-star,rgba(150,120,210,.32)) 0 1.2px,transparent 1.3px),
+    radial-gradient(circle at 72% 22%,var(--whisper-star,rgba(150,120,210,.32)) 0 1.2px,transparent 1.3px),
+    radial-gradient(circle at 56% 64%,var(--whisper-star,rgba(150,120,210,.32)) 0 1.2px,transparent 1.3px),
+    radial-gradient(circle at 84% 48%,var(--whisper-star,rgba(150,120,210,.32)) 0 1.2px,transparent 1.3px);
+  background-repeat:no-repeat,no-repeat,repeat,repeat,repeat,repeat;
+  background-size:auto,auto,240px 260px,200px 220px,280px 300px,220px 240px;
+  background-color:var(--whisper-paper,#FBF8FF);
+}
+
+.wsp-day{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  margin:14px 0 12px;
+}
+.wsp-day:first-child{margin-top:2px}
+.wsp-day .ln{flex:1;height:1px;background:var(--whisper-line,rgba(150,124,196,.32));opacity:.6}
+.wsp-day .dd{
+  flex:0 0 auto;font-size:10.5px;font-weight:800;letter-spacing:.4px;
+  color:var(--whisper-ink-2,#8578A6);
+  padding:4px 11px;border-radius:99px;
+  background:rgba(255,255,255,.78);
+  border:1px solid var(--whisper-line,rgba(150,124,196,.32));
+}
+
+.wsp-row{display:flex;margin:9px 0}
+.wsp-row.me{justify-content:flex-end}
+.wsp-row.ta{justify-content:flex-start}
+
+.wsp-b{
+  position:relative;max-width:78%;
+  padding:9px 12px 6px;border-radius:17px;
+  box-shadow:var(--whisper-shadow,0 6px 18px rgba(150,124,196,.20));
+}
+.wsp-b .tx{
+  font-size:13.5px;line-height:1.68;font-weight:600;
+  white-space:pre-wrap;word-break:break-word;
+  user-select:text;-webkit-user-select:text;
+}
+.wsp-b .mt{
+  display:flex;align-items:center;justify-content:flex-end;gap:5px;
+  margin-top:3px;font-size:9.5px;font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+/* 我的：粉气泡 + 白字（右） */
+.wsp-row.me .wsp-b{
+  background:var(--whisper-me,linear-gradient(150deg,#FFC8DE 0%,#F0A6C8 100%));
+  color:#fff;border-bottom-right-radius:6px;
+}
+.wsp-row.me .wsp-b .mt{color:rgba(255,255,255,.82)}
+/* TA 的：雾紫纸 + 深紫字（左） */
+.wsp-row.ta .wsp-b{
+  background:var(--whisper-ta,#F4EEFB);
+  color:var(--whisper-ink,#5B4B7A);
+  border:1px solid var(--whisper-line,rgba(150,124,196,.32));
+  border-bottom-left-radius:6px;
+}
+.wsp-row.ta .wsp-b .mt{color:var(--whisper-ink-3,#A99CC4)}
+
+.wsp-b .stat{color:var(--whisper-time,#B0A3C8)}
+.wsp-row.me .wsp-b .stat{color:rgba(255,255,255,.86)}
+.wsp-b .stat.bad{color:#E4563C}
+.wsp-b .stat.ok{color:#3F8A62}
+.wsp-row.me .wsp-b .stat.ok{color:#fff}
+
+/* 这一轮新到的：飘一下（老消息不重放） */
+@keyframes wspIn{
+  from{opacity:0;transform:translateY(7px) scale(.985)}
+  to{opacity:1;transform:none}
+}
+.wsp-b.new{animation:wspIn .24s ease both}
+/* 发送中：半透明，一眼看得出「还在路上」 */
+.wsp-row.pending .wsp-b{opacity:.66}
+
+/* 「以下是新消息」分隔 */
+.wsp-unreadline{
+  display:flex;align-items:center;gap:8px;margin:14px 0 8px;
+  font-size:10px;font-weight:800;color:var(--whisper-accent-2,#7E68B8);
+}
+.wsp-unreadline .ln{flex:1;height:1px;background:var(--whisper-star,rgba(150,120,210,.32))}
+
+/* 底下这行的已读回执 */
+.wsp-receipt{
+  margin:8px 2px 2px;text-align:right;
+  font-size:10px;font-weight:700;color:var(--whisper-time,#B0A3C8);
+}
+.wsp-receipt.ok{color:var(--whisper-accent-2,#7E68B8)}
+
+/* 回到最新 */
+.wsp-jump{
+  position:absolute;right:14px;bottom:96px;z-index:2;
+  display:none;align-items:center;gap:5px;
+  padding:7px 12px;border-radius:99px;cursor:pointer;
+  background:#fff;color:var(--whisper-accent-2,#7E68B8);
+  border:1px solid var(--whisper-line,rgba(150,124,196,.32));
+  box-shadow:var(--whisper-shadow,0 6px 18px rgba(150,124,196,.20));
+  font-size:11px;font-weight:800;
+}
+.wsp-jump.on{display:flex}
+
+/* 空态 */
+.wsp-empty{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:9px;padding:44px 24px;text-align:center;
+  color:var(--whisper-ink-2,#8578A6);
+}
+.wsp-empty .big{
+  width:74px;height:74px;border-radius:50%;
+  background:rgba(255,255,255,.8);
+  border:1px dashed var(--whisper-line,rgba(150,124,196,.32));
+  display:grid;place-items:center;color:var(--whisper-accent,#B79FE0);
+}
+.wsp-empty .big svg{width:36px;height:36px}
+.wsp-empty b{font-size:13.5px;font-weight:800;color:var(--whisper-ink,#5B4B7A)}
+.wsp-empty span{font-size:11.5px;font-weight:700;line-height:1.7;color:var(--whisper-ink-3,#A99CC4)}
+
+/* ============================================================
+   输入条
+   ============================================================ */
+.wsp-composer{
+  flex:0 0 auto;display:flex;align-items:flex-end;gap:8px;
+  padding:9px 11px calc(9px + env(safe-area-inset-bottom));
+  background:var(--whisper-bg,#F2ECFA);
+  border-top:1px solid var(--whisper-line,rgba(150,124,196,.32));
+}
+.wsp-in{
+  flex:1;min-width:0;
+  box-sizing:border-box;
+  padding:10px 13px;max-height:104px;
+  font-family:inherit;font-size:13.5px;line-height:1.6;font-weight:600;
+  color:var(--whisper-ink,#5B4B7A);
+  background:#fff;border:1.5px solid var(--whisper-line,rgba(150,124,196,.32));
+  border-radius:19px;resize:none;overflow-y:auto;
+  -webkit-appearance:none;
+}
+.wsp-in:focus{outline:none;border-color:var(--whisper-accent,#B79FE0)}
+.wsp-in::placeholder{color:var(--whisper-ink-3,#A99CC4);font-weight:600}
+.wsp-send{
+  flex:0 0 auto;padding:11px 17px;border-radius:19px;cursor:pointer;
+  background:var(--whisper-me,linear-gradient(150deg,#FFC8DE 0%,#F0A6C8 100%));
+  color:#fff;font-size:13px;font-weight:800;
+  box-shadow:0 6px 16px rgba(240,166,200,.36);
+}
+.wsp-send:active{transform:translateY(1px)}
+.wsp-send.off{
+  background:rgba(255,255,255,.72);color:var(--whisper-ink-3,#A99CC4);
+  box-shadow:none;border:1px solid var(--whisper-line,rgba(150,124,196,.32));
+  cursor:default;
+}
+/* 输入框里的字数（快满 1000 才显示，平时不打扰） */
+.wsp-len{
+  position:absolute;right:14px;bottom:52px;
+  font-size:10px;font-weight:800;color:var(--whisper-time,#B0A3C8);
+  display:none;
+}
+.wsp-len.on{display:block}
+.wsp-wrap{position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+
+/* 轻提示（本模块自己的，不抢 index.html 的 toast） */
+.wsp-toast{
+  position:fixed;left:50%;bottom:96px;z-index:210;
+  transform:translateX(-50%) translateY(8px);
+  max-width:78%;text-align:center;
+  background:rgba(91,75,122,.94);color:#fff;
+  font-size:12.5px;font-weight:700;line-height:1.5;
+  padding:9px 16px;border-radius:99px;
+  opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;
+}
+.wsp-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 整页导出（?full=1）：跟着长图走，别 fixed */
+html[data-full="1"] .wsp-page{
+  position:static;opacity:1;transform:none;width:auto;
+  border-radius:26px;overflow:hidden;margin:16px;
+  border:1.5px solid var(--whisper-line,rgba(150,124,196,.32));
+}
+html[data-full="1"] .wsp-list{max-height:none;overflow:visible}

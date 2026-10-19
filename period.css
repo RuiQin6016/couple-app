@@ -1,0 +1,250 @@
+/* ============================================================
+   例假模块 —— 样式（独立文件）
+   ------------------------------------------------------------
+   为什么单独一个文件：index.html 正被另一个会话编辑，模块自带样式后，
+   接入时只需插一个 <link>，碰撞窗口从上千行降到一行。
+
+   颜色一律取 design-tokens.css 的变量，不写死色值。
+   画风：美乐蒂风（柔粉 + 大圆角 + 爱心/星点母题），图形全部原创 SVG。
+   ============================================================ */
+
+  /* ---------- 页面容器 ---------- */
+  /* tabBar 高 84px，这里留 104px 底部空间 */
+  #scr-period.on{padding-bottom:104px}
+
+  /* ---------- 顶部：预测总览卡 ---------- */
+  .pd-hero{
+    margin-top:var(--gap-card);padding:16px 17px 15px;
+    border-radius:var(--radius-card);background:var(--hero-bg);
+    box-shadow:var(--shadow-fab);color:#fff;position:relative;overflow:hidden;
+  }
+  /* 光晕用径向渐变做背景，不用负偏移的装饰元素（会把 scrollWidth 撑满） */
+  .pd-hero::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(120px 70px at 88% 8%,rgba(255,255,255,.42),transparent 70%);
+  }
+  .pd-hero .pd-hero-top{display:flex;align-items:center;gap:9px;position:relative;z-index:1}
+  .pd-hero .pd-hero-ic{width:34px;height:34px;flex:0 0 auto}
+  .pd-hero .pd-hero-ic svg{width:100%;height:100%;display:block}
+  .pd-hero .pd-k{font-size:11px;font-weight:800;letter-spacing:.6px;opacity:.9}
+  .pd-hero .pd-big{font-size:19px;font-weight:800;margin-top:2px;line-height:1.25}
+  .pd-hero .pd-sub{
+    font-size:11px;line-height:1.6;margin-top:9px;position:relative;z-index:1;
+    color:rgba(255,255,255,.95);
+  }
+  .pd-hero .pd-note{
+    font-size:10px;line-height:1.55;margin-top:8px;padding-top:8px;position:relative;z-index:1;
+    color:rgba(255,255,255,.86);border-top:1px dashed rgba(255,255,255,.45);
+  }
+
+  /* ---------- 打卡：日期导航 ---------- */
+  .pd-day{display:flex;align-items:center;gap:9px;margin:var(--gap-card) 0 10px}
+  .pd-day .pd-arrow{
+    width:32px;height:32px;flex:0 0 auto;border-radius:50%;
+    display:grid;place-items:center;cursor:pointer;
+    background:var(--surface);border:1.5px solid var(--line);color:var(--primary-deep);
+    font-size:13px;font-weight:800;
+  }
+  .pd-day .pd-arrow.off{opacity:.32;cursor:default;pointer-events:none}
+  .pd-day .pd-daynow{
+    flex:1;min-width:0;text-align:center;
+    display:flex;align-items:center;justify-content:center;gap:7px;
+    padding:8px 10px;border-radius:var(--radius-pill);
+    background:var(--surface);border:1.5px solid var(--line);
+  }
+  .pd-day .pd-daynow b{font-size:12.5px;font-weight:800;color:var(--ink)}
+  .pd-day .pd-daynow em{
+    font-style:normal;font-size:10px;font-weight:800;padding:2px 7px;
+    border-radius:var(--radius-pill);color:var(--primary-deep);background:var(--accent-3);
+  }
+  .pd-day .pd-daynow em.today{background:var(--hero-bg);color:#fff}
+
+  /* ---------- 表单卡 ---------- */
+  .pd-card{margin-top:var(--gap-card);padding:15px 16px 16px}
+  .pd-card .pd-title{
+    display:flex;align-items:center;gap:7px;
+    font-size:13.5px;font-weight:800;color:var(--ink);
+  }
+  .pd-card .pd-title .pd-tt-ic{font-size:14px;line-height:1}
+  .pd-card .pd-title .pd-date{
+    margin-left:auto;font-size:10.5px;font-weight:700;color:var(--ink-3);
+  }
+
+  .pd-field{margin-top:15px}
+  .pd-field:first-of-type{margin-top:13px}
+  .pd-label{
+    display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;
+    color:var(--ink-2);margin-bottom:9px;
+  }
+  .pd-label .pd-hint{
+    margin-left:auto;font-size:10px;font-weight:700;color:var(--ink-3);
+  }
+
+  /* ---------- 胶囊 ---------- */
+  .pd-chips{display:flex;flex-wrap:wrap;gap:9px}
+  .pd-chips.pd-g4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+
+  .pd-chip{
+    display:inline-flex;align-items:center;justify-content:center;gap:4px;
+    min-width:0;padding:9px 12px;border-radius:var(--radius-pill);
+    font-size:12px;font-weight:700;color:var(--ink-2);cursor:pointer;
+    background:var(--surface);border:1.5px solid var(--line);
+    /* 长文案也不许撑破容器 */
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    transition:transform .12s ease;
+  }
+  .pd-chip em{font-style:normal;font-size:13px;line-height:1;flex:0 0 auto}
+  .pd-chip:active{transform:scale(.96)}
+  .pd-chip.on{
+    background:var(--hero-bg);border-color:transparent;color:#fff;
+    font-weight:800;box-shadow:var(--shadow-fab);
+  }
+
+  /* ---------- 备注 ---------- */
+  .pd-note-box{
+    margin-top:13px;border-radius:18px;background:var(--accent-3);
+    border:1.5px solid var(--line);padding:11px 13px;
+  }
+  .pd-note-box textarea{
+    width:100%;min-width:0;border:0;outline:none;background:transparent;resize:none;
+    font-size:12.5px;line-height:1.7;color:var(--ink);
+    font-family:inherit;height:56px;display:block;
+  }
+  .pd-note-box textarea::placeholder{color:var(--ink-3)}
+  .pd-note-box .pd-count{
+    text-align:right;font-size:10px;font-weight:700;color:var(--ink-3);margin-top:4px;
+  }
+
+  .pd-actions{display:flex;gap:10px;margin-top:14px}
+  .pd-actions .pd-btn{
+    flex:1;min-width:0;padding:11px 8px;border-radius:var(--radius-pill);
+    font-size:12.5px;font-weight:800;text-align:center;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:5px;
+  }
+  .pd-actions .pd-btn.primary{background:var(--hero-bg);color:#fff;box-shadow:var(--shadow-fab)}
+  .pd-actions .pd-btn.plain{
+    background:var(--surface);color:var(--primary-deep);border:1.5px solid var(--line);
+  }
+
+  /* ---------- 记录一览 ---------- */
+  .pd-history{display:flex;flex-direction:column;gap:9px;margin-top:2px}
+  .pd-hist{
+    display:flex;align-items:flex-start;gap:11px;
+    padding:11px 13px;border-radius:18px;
+    background:var(--accent-3);border:1.5px solid var(--line);min-width:0;
+  }
+  .pd-hist .pd-hd{
+    flex:0 0 auto;text-align:center;min-width:44px;
+    font-size:12.5px;font-weight:800;color:var(--primary-deep);
+  }
+  .pd-hist .pd-hd span{display:block;font-size:9.5px;font-weight:700;color:var(--ink-3);margin-top:2px}
+  .pd-hist .pd-hc{flex:1;min-width:0}
+  .pd-hist .pd-hflow{
+    display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;
+    border-radius:var(--radius-pill);background:var(--surface);
+    color:var(--primary-deep);border:1px solid var(--line);
+  }
+  .pd-hist .pd-htags{
+    font-size:11px;line-height:1.65;color:var(--ink-2);margin-top:5px;
+    overflow-wrap:break-word;
+  }
+  .pd-hist .pd-hnote{
+    font-size:11px;line-height:1.65;color:var(--ink-3);margin-top:4px;
+    overflow-wrap:break-word;
+  }
+  .pd-empty{
+    text-align:center;font-size:11.5px;color:var(--ink-3);line-height:1.8;
+    padding:14px 10px;border-radius:18px;background:var(--accent-3);
+    border:1.5px dashed var(--line);
+  }
+
+  /* ---------- 周期窗口条（真实 vs 预测必须可区分） ---------- */
+  .pd-track{display:flex;gap:9px;margin-top:13px}
+  .pd-pill{
+    flex:1;min-width:0;padding:11px 12px;border-radius:18px;text-align:center;
+    background:var(--accent-3);border:1.5px solid var(--line);
+  }
+  /* 预测用虚线边框 + 浅底，和实线的真实记录一眼分得开 */
+  .pd-pill.predicted{
+    border-style:dashed;border-color:var(--line-strong);background:var(--surface-2);
+  }
+  .pd-pill .pd-pk{font-size:10px;font-weight:800;color:var(--ink-3);letter-spacing:.4px}
+  .pd-pill .pd-pv{
+    font-size:13px;font-weight:800;color:var(--ink);margin-top:5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .pd-pill.predicted .pd-pv{color:var(--primary-deep)}
+  .pd-pill .pd-pd{font-size:10px;font-weight:700;color:var(--ink-3);margin-top:4px}
+  .pd-track-note{
+    font-size:10px;line-height:1.6;color:var(--ink-3);margin-top:9px;
+  }
+
+  /* ---------- 周期设置卡 ---------- */
+  .pd-setcard{margin-top:var(--gap-card);padding:16px}
+  .pd-setcard .pd-sett{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:800;color:var(--ink)}
+  .pd-setcard .pd-sett .pd-tt-ic{font-size:14px;line-height:1}
+  .pd-setcard .pd-setlead{
+    font-size:10.5px;line-height:1.6;color:var(--ink-3);margin-top:6px;
+  }
+  .pd-setgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:13px}
+  .pd-setfield{min-width:0}
+  .pd-setfield .pd-sl{
+    font-size:11px;font-weight:800;color:var(--ink-2);margin-bottom:7px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .pd-setfield .pd-input{
+    display:flex;align-items:center;gap:6px;padding:9px 12px;
+    border-radius:18px;background:var(--accent-3);border:1.5px solid var(--line);
+  }
+  .pd-setfield .pd-input input{
+    width:100%;min-width:0;border:0;outline:none;background:transparent;
+    font-size:15px;font-weight:800;color:var(--ink);font-family:inherit;
+    -moz-appearance:textfield;
+  }
+  .pd-setfield .pd-input input::-webkit-outer-spin-button,
+  .pd-setfield .pd-input input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .pd-setfield .pd-input i{font-style:normal;font-size:11px;font-weight:700;color:var(--ink-3);flex:0 0 auto}
+  .pd-setfoot{
+    display:flex;align-items:center;gap:8px;margin-top:13px;
+    font-size:10px;line-height:1.6;color:var(--ink-3);
+  }
+  .pd-setfoot .pd-save{
+    margin-left:auto;flex:0 0 auto;padding:8px 15px;border-radius:var(--radius-pill);
+    font-size:11.5px;font-weight:800;
+  }
+  .pd-setfoot .pd-save.on{background:var(--hero-bg);color:#fff;box-shadow:var(--shadow-fab);cursor:pointer}
+  .pd-setfoot .pd-save.off{background:var(--surface-sunken);color:var(--ink-3);cursor:default}
+
+  /* ---------- 护理指南卡 ---------- */
+  .pd-guide{margin-top:var(--gap-card);padding:16px}
+  .pd-guide .pd-gt{
+    display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:800;color:var(--ink);
+  }
+  .pd-guide .pd-gt .pd-tt-ic{font-size:14px;line-height:1}
+  .pd-guide .pd-glead{font-size:10.5px;line-height:1.6;color:var(--ink-3);margin-top:6px}
+  .pd-block{
+    margin-top:11px;border-radius:18px;background:var(--accent-3);
+    padding:12px 13px 13px;min-width:0;
+  }
+  /* 粉底小标题条（参考图那个观感，颜色走 token） */
+  .pd-block .pd-bh{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:4px 11px;border-radius:var(--radius-pill);
+    background:var(--primary-soft);color:var(--primary-deep);
+    font-size:11.5px;font-weight:800;
+  }
+  .pd-block ul{list-style:none;margin:9px 0 0;padding:0}
+  .pd-block li{
+    position:relative;font-size:11.5px;line-height:1.75;color:var(--ink-2);
+    padding-left:13px;margin-top:4px;overflow-wrap:break-word;
+  }
+  .pd-block li:first-child{margin-top:0}
+  /* 圆点用 ::before 在自身内边距里，不用负偏移 */
+  .pd-block li::before{
+    content:"";position:absolute;left:3px;top:8px;
+    width:4px;height:4px;border-radius:50%;background:var(--primary);
+  }
+  .pd-disc{
+    margin-top:13px;padding-top:11px;border-top:1px dashed var(--line);
+    font-size:10px;line-height:1.65;color:var(--ink-3);text-align:center;
+  }

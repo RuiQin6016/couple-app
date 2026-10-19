@@ -1,0 +1,140 @@
+/* ============================================================
+   设置面板（同步配对 / 天气 key / 我的身份）
+   ------------------------------------------------------------
+   选择器全部带 st- 前缀，不会污染页面。
+   ⚠️ 浮层必须挂在 <body> 上，不能放进 .content 里：
+      .content{z-index:1} 是**层叠上下文**，装在里面的话
+      z-index 调到多高都翻不过 .tabbar(99) —— 底部按钮会被整条吃掉。
+      （相册模块踩过一模一样的坑，见设计系统速查 §八·八）
+   ============================================================ */
+
+.st-overlay{
+  position:fixed;inset:0;z-index:200;
+  background:rgba(92,69,80,.34);
+  opacity:0;pointer-events:none;
+  transition:opacity .22s ease;
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.st-overlay.on{opacity:1;pointer-events:auto}
+
+.st-sheet{
+  width:100%;max-width:480px;
+  max-height:88vh;overflow-y:auto;
+  background:var(--surface);
+  border-radius:28px 28px 0 0;
+  padding:18px 18px calc(24px + env(safe-area-inset-bottom));
+  box-shadow:0 -10px 34px rgba(190,130,155,.28);
+  transform:translateY(14px);
+  transition:transform .24s cubic-bezier(.22,1,.3,1);
+  -webkit-overflow-scrolling:touch;
+}
+.st-overlay.on .st-sheet{transform:translateY(0)}
+
+/* ---- 顶部标题 ---- */
+.st-head{display:flex;align-items:center;gap:10px;padding:2px 2px 14px}
+.st-head .t{font-size:19px;font-weight:800;color:var(--ink)}
+.st-head .x{
+  margin-left:auto;width:32px;height:32px;border-radius:50%;flex:0 0 auto;
+  background:var(--accent-3);color:var(--ink-2);
+  display:grid;place-items:center;font-size:15px;font-weight:800;
+  cursor:pointer;border:1px solid var(--line);
+}
+
+/* ---- 分区卡 ---- */
+.st-card{
+  background:#fff;border:1.5px solid var(--line);border-radius:20px;
+  padding:14px 15px;margin-bottom:12px;box-shadow:var(--shadow-card);
+}
+.st-card > .h{
+  display:flex;align-items:center;gap:7px;
+  font-size:12.5px;font-weight:800;color:var(--primary-deep);letter-spacing:.5px;
+}
+.st-card > .h .tag{
+  margin-left:auto;font-size:10px;font-weight:800;padding:3px 9px;
+  border-radius:var(--radius-pill);background:var(--accent-3);color:var(--ink-2);
+}
+.st-card > .h .tag.ok{background:#E7F5EC;color:#3F8A62}
+.st-card > .h .tag.warn{background:#FFF0E2;color:#C4803F}
+.st-card > .h .tag.err{background:#FDECEA;color:#C0503F}
+
+.st-d{font-size:11.5px;line-height:1.7;color:var(--ink-3);margin-top:8px}
+.st-d b{color:var(--ink-2);font-weight:800}
+.st-row{display:flex;align-items:center;gap:8px;margin-top:10px}
+.st-row .lbl{font-size:12px;font-weight:700;color:var(--ink-2);flex:0 0 auto}
+.st-row .val{
+  font-size:12px;font-weight:800;color:var(--ink);margin-left:auto;
+  font-variant-numeric:tabular-nums;text-align:right;word-break:break-all;
+}
+.st-row .val.mono{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.5px}
+
+/* 指纹：要能一眼对上，所以放大、字距宽、底色挑出来 */
+.st-fp{
+  margin-top:10px;padding:11px 12px;border-radius:14px;
+  background:var(--accent-3);border:1px dashed var(--line-strong);
+  text-align:center;
+}
+.st-fp .k{font-size:10.5px;font-weight:800;color:var(--ink-3);letter-spacing:.6px}
+.st-fp .v{
+  font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:19px;font-weight:800;color:var(--primary-deep);
+  letter-spacing:2px;margin-top:5px;
+}
+
+/* ---- 输入 ---- */
+.st-in,.st-ta{
+  width:100%;margin-top:10px;padding:11px 12px;
+  font-size:13px;font-weight:600;font-family:inherit;color:var(--ink);
+  background:var(--accent-3);border:1.5px solid var(--line);border-radius:14px;
+  -webkit-appearance:none;
+}
+.st-in:focus,.st-ta:focus{outline:none;border-color:var(--primary)}
+.st-ta{
+  min-height:92px;resize:vertical;line-height:1.6;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
+}
+.st-in.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+
+/* ---- 按钮 ---- */
+.st-btns{display:flex;gap:9px;margin-top:12px}
+.st-btns .btn{flex:1;padding:11px}
+.st-btns.stack{flex-direction:column}
+.st-btn{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 14px;border-radius:var(--radius-pill);
+  font-size:13px;font-weight:800;cursor:pointer;border:none;width:100%;
+  font-family:inherit;
+}
+.st-btn.primary{background:var(--hero-bg);color:#fff;box-shadow:var(--shadow-fab)}
+.st-btn.plain{background:var(--accent-3);color:var(--primary-deep);border:1px solid var(--line)}
+.st-btn.danger{background:#FDECEA;color:#C0503F;border:1px solid #F3CFC9}
+.st-btn[disabled]{opacity:.5;pointer-events:none}
+.st-btn.sm{padding:8px 12px;font-size:12px;width:auto}
+
+/* 链接码：给足高度、等宽字、能整段选中复制 */
+.st-link{
+  width:100%;margin-top:10px;padding:11px 12px;min-height:110px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+  line-height:1.55;color:var(--ink);word-break:break-all;
+  background:var(--accent-3);border:1.5px solid var(--line-strong);border-radius:14px;
+  resize:vertical;
+}
+
+.st-note{
+  margin-top:10px;padding:10px 12px;border-radius:14px;
+  background:#FFF8EC;border:1px solid #F5E2C4;
+  font-size:11.5px;line-height:1.7;color:#9A7233;
+}
+.st-note.err{background:#FDECEA;border-color:#F3CFC9;color:#B04A3A}
+.st-note.ok{background:#EAF7F0;border-color:#C9E9D8;color:#3F8A62}
+
+/* 身份选择：两个胶囊 */
+.st-seg{display:flex;gap:8px;margin-top:10px}
+.st-seg .o{
+  flex:1;text-align:center;padding:10px 8px;border-radius:14px;cursor:pointer;
+  font-size:12.5px;font-weight:800;color:var(--ink-2);
+  background:var(--surface);border:1.5px solid var(--line);
+}
+.st-seg .o.on{
+  background:var(--hero-bg);color:#fff;border-color:transparent;
+  box-shadow:var(--shadow-fab);
+}
