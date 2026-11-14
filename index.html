@@ -9,7 +9,7 @@
   /* ★ 版本号：两台手机必须一样。不一样 = 其中一台还在跑旧代码（缓存没刷新），
      这是排查"她能收到我的、我收不到她的"这类问题时第一个要看的东西。
      改了前端代码就把它 +1。 */
-  window.APP_BUILD = '2026-10-19-21'
+  window.APP_BUILD = '2026-11-14-3'
 </script>
 
 <!-- ===== PWA：装到手机桌面 =====
@@ -31,6 +31,7 @@
 <meta name="format-detection" content="telephone=no">
 
 <link rel="stylesheet" href="design-tokens.css">
+<link rel="stylesheet" href="splash.css">
 <!-- 例假模块的样式：全部选择器都带 pd- 前缀（只有一个 #scr-period.on），不会污染本页 -->
 <link rel="stylesheet" href="period.css">
 <!-- 共同相册的样式：选择器都带 al- 前缀（只有 #scr-album.on），不会污染本页
@@ -1078,6 +1079,13 @@
 </style>
 </head>
 <body>
+<div class="lk-splash" aria-hidden="true" hidden>
+  <div class="lk-splash-card">
+    <img class="lk-splash-art" src="icons/splash-diary.webp" width="660" height="541" alt="" fetchpriority="high">
+    <span class="lk-splash-title">恋爱小管家</span>
+    <span class="lk-splash-line">把平凡的日子，过成我们的小事</span>
+  </div>
+</div>
 
 <!-- 图形库：原创造型，不复刻任何注册形象 -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">

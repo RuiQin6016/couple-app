@@ -1,0 +1,29 @@
+/* The opening artwork is decorative and never intercepts input. */
+.lk-splash {
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; place-items: center; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 42%, #fffaf4, #ffe5ed);
+  color: #803b50; animation: lk-splash-out 1.65s ease-out both;
+}
+.lk-splash-card {
+  display: grid; justify-items: center; gap: .6rem;
+  padding: 1rem; text-align: center;
+  animation: lk-splash-rise .65s cubic-bezier(.22,.8,.28,1) both;
+}
+.lk-splash-art {
+  display: block; width: min(72vw, 52vh, 290px); height: auto;
+  margin-bottom: .55rem;
+}
+.lk-splash-title { font-size: 1.75rem; font-weight: 750; letter-spacing: .1em; }
+.lk-splash-line { font-size: .85rem; letter-spacing: .08em; }
+@keyframes lk-splash-out {
+  0%, 70% { opacity: 1; visibility: visible; }
+  99% { opacity: 0; visibility: visible; }
+  100% { opacity: 0; visibility: hidden; }
+}
+@keyframes lk-splash-rise {
+  0% { opacity: 0; transform: translateY(15px) scale(.91); }
+  73% { opacity: 1; transform: translateY(-3px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .lk-splash { display: none; } }

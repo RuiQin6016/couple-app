@@ -26,7 +26,7 @@
       `tools/check-syntax.js` 会检查这一条，不一致直接红。
    ============================================================ */
 
-var VERSION = '2026-10-19-21'
+var VERSION = '2026-11-14-3'
 var CACHE = 'couple-app-' + VERSION
 
 /* 网络慢的时候最多等这么久（毫秒），超过就先把缓存拿出来用，
@@ -41,8 +41,11 @@ var SHELL = [
   './',
   './index.html',
   './manifest.json',
+  './splash.css',
+  './icons/splash-diary.webp',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png'
 ]
 
